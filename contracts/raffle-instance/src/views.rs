@@ -167,6 +167,7 @@ pub(crate) fn is_ticket_sales_paused(env: Env) -> bool {
 /// `allow_multiple`. A zero per-address cap means unlimited, in which case
 /// `allow_multiple: false` still limits an address to one ticket. The result
 /// never exceeds the raffle-wide remaining capacity.
+#[allow(dead_code)]
 pub(crate) fn get_remaining_ticket_allowance(
     env: Env,
     owner: Address,

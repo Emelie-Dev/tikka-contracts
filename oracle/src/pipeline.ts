@@ -9,6 +9,7 @@ import { GracefulShutdown } from './shutdown/graceful-shutdown';
 import { Alerter } from './alert/alerter';
 import { OracleConfig } from './config';
 import { QuorumService } from './quorum/quorum.service';
+import { childLogger } from './logging/logger';
 
 export interface PipelineOptions {
   config: OracleConfig;
@@ -28,7 +29,7 @@ export class OraclePipeline {
   private readonly gracefulShutdown: GracefulShutdown;
   private readonly alerter: Alerter;
   private readonly config: OracleConfig;
-  private quorumService!: QuorumService;
+  private quorumService?: QuorumService;
 
   private running = false;
 
@@ -152,6 +153,10 @@ export class OraclePipeline {
     }
 
     try {
+      if (!this.quorumService) {
+        throw new Error('Pipeline is not initialized: QuorumService is unavailable');
+      }
+
       // Check if we participate in Quorum or Single Oracle
       const quorumCheck = await this.quorumService.checkQuorumParticipation(raffleContract);
       

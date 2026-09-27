@@ -42,12 +42,8 @@ use soroban_sdk::{
 use raffle_shared::{apply_bp, RandomnessSource, Ticket};
 
 use crate::events::{DrawTriggered, RandomnessRequested, TicketPurchased};
-use crate::helpers::calculate_buy_quote;
-use crate::{
-    request_randomness, require_not_paused, transition_to_drawing, CommitRevealEntry, DataKey,
-    Error, RaffleStatus,
-};
-use crate::helpers::bump_raffle_ttl;
+use crate::helpers::{calculate_buy_quote, bump_raffle_ttl, Guard, request_randomness, require_not_paused, transition_to_drawing};
+use crate::{CommitRevealEntry, DataKey, Error, Raffle, RaffleStatus};
 
 /// Purchase one or more raffle tickets for `buyer`.
 ///
@@ -125,11 +121,8 @@ use crate::helpers::bump_raffle_ttl;
 ///
 /// See also: [`docs/EVENTS.md`](../../../../docs/EVENTS.md) —
 /// `TicketPurchased`, `DrawTriggered`, `RandomnessRequested`.
-pub(crate) fn buy_tickets(env: Env, buyer: Address, quantity: u32) -> Result<u32, Error> {
-    //  1. Take reentrancy guard FIRST
-    let _guard = Guard::new(&env)?;
-
-    //  2. Validate inputs
+fn validate_purchase_preconditions(env: &Env, raffle: &Raffle, quantity: u32) -> Result<(), Error> {
+    //  1. Validate inputs
     let drawing_lock: bool = env
         .storage()
         .instance()
@@ -144,10 +137,10 @@ pub(crate) fn buy_tickets(env: Env, buyer: Address, quantity: u32) -> Result<u32
     if quantity > raffle.max_tickets_per_tx {
         return Err(Error::ExceedsMaxTicketsPerTx);
     }
-    require_not_paused(env)?;
+    crate::require_not_paused(env)?;
     crate::require_global_not_paused(env)?;
 
-    if raffle.status != RaffleStatus::Active {
+    if raffle.status != crate::RaffleStatus::Active {
         return Err(Error::RaffleInactive);
     }
     if raffle.ticket_sales_paused {
@@ -200,7 +193,7 @@ pub(crate) fn buy_tickets(env: Env, buyer: Address, quantity: u32) -> Result<u32
     let quote = calculate_buy_quote(&raffle, quantity)?;
     let total_price = quote.net_to_pay;
     let protocol_fee = quote.fee;
-    let effective_price = quote.effective_ticket_price;
+    let _effective_price = quote.effective_ticket_price;
 
     //  3. Verify no concurrent modification
     let persisted = crate::read_raffle(&env)?;
@@ -226,6 +219,7 @@ pub(crate) fn buy_tickets(env: Env, buyer: Address, quantity: u32) -> Result<u32
     let contract_address = env.current_contract_address();
     token_client
         .try_transfer(&buyer, &contract_address, &total_price)
+        .map_err(|_| Error::TokenTransferFailed)?
         .map_err(|_| Error::TokenTransferFailed)?;
 
     //  5. Accrue protocol fees for withdrawal after finalization.
@@ -260,7 +254,7 @@ pub(crate) fn buy_tickets(env: Env, buyer: Address, quantity: u32) -> Result<u32
     for i in 0..quantity {
         let ticket_id = snapshot_sold
             .checked_add(i)
-            .and_then(|v| v.checked_add(1))
+            .and_then(|v: u32| v.checked_add(1))
             .ok_or(Error::ArithmeticOverflow)?;
         let ticket = Ticket {
             id: ticket_id,
@@ -350,39 +344,7 @@ pub(crate) fn buy_tickets(env: Env, buyer: Address, quantity: u32) -> Result<u32
         );
     }
 
-        fix/security-checks-effects-763
     //  10. Bump TTLs
-
-    let token_client = token::Client::new(&env, &raffle.payment_token);
-    let _ = token_client
-        .try_transfer(&buyer, env.current_contract_address(), &total_price)
-        .map_err(|_| Error::TokenTransferFailed)?;
-
-    if protocol_fee > 0 {
-        let prev: i128 = env
-            .storage()
-            .instance()
-            .get(&DataKey::AccumulatedFees)
-            .unwrap_or(0);
-        env.storage()
-            .instance()
-            .set(&DataKey::AccumulatedFees, &(prev + protocol_fee));
-    }
-
-    TicketPurchased {
-        buyer,
-        ticket_ids,
-        quantity,
-        ticket_price: raffle.ticket_price,
-        effective_ticket_price: raffle.ticket_price,
-        total_paid: total_price,
-        protocol_fee,
-        timestamp,
-    }
-    .publish(&env);
-
-    // Opportunistically bump TTLs so a long-running raffle doesn't get archived.
-        master
     bump_raffle_ttl(&env, raffle.tickets_sold);
 
     Ok(raffle.tickets_sold)
@@ -502,6 +464,10 @@ pub(crate) fn buy_tickets_for(env: Env, buyer: Address, recipient: Address, quan
         .checked_add(protocol_fee)
         .ok_or(Error::ArithmeticOverflow)?;
         master
+    let quote = calculate_buy_quote(&raffle, quantity)?;
+    let total_price = quote.net_to_pay;
+    let protocol_fee = quote.fee;
+    let effective_price = quote.effective_ticket_price;
 
     //  3. Verify no concurrent modification
     let persisted = crate::read_raffle(&env)?;
@@ -527,6 +493,7 @@ pub(crate) fn buy_tickets_for(env: Env, buyer: Address, recipient: Address, quan
     let contract_address = env.current_contract_address();
     token_client
         .try_transfer(&buyer, &contract_address, &total_price)
+        .map_err(|_| Error::TokenTransferFailed)?
         .map_err(|_| Error::TokenTransferFailed)?;
 
     //  5. Accrue protocol fees for withdrawal after finalization.
@@ -561,13 +528,15 @@ pub(crate) fn buy_tickets_for(env: Env, buyer: Address, recipient: Address, quan
     for i in 0..quantity {
         let ticket_id = snapshot_sold
             .checked_add(i)
-            .and_then(|v| v.checked_add(1))
+            .and_then(|v: u32| v.checked_add(1))
             .ok_or(Error::ArithmeticOverflow)?;
         let ticket = Ticket {
             id: ticket_id,
             owner: recipient.clone(),
             purchase_time: timestamp,
             ticket_number: ticket_id,
+            payer: buyer.clone(),
+            price_paid: effective_price,
         };
         env.storage()
             .persistent()

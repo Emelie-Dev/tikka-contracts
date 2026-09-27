@@ -7,10 +7,8 @@
 extern crate std;
 
 use soroban_sdk::{
-    auth::{ContractContext, InvokerContractAuthEntry, SubContractInvocation},
-    contract, contracterror, contractimpl, contracttype, token,
-    xdr::ToXdr,
-    Address, Bytes, BytesN, Env, IntoVal, String, Symbol, Val, Vec,
+    contract, contracterror, contractimpl, contracttype,
+    Address, BytesN, Env, String, Vec,
 };
 
 mod admin;
@@ -24,11 +22,9 @@ mod randomness;
 mod tickets;
 mod views;
 
-pub(crate) use helpers::do_finalize_with_seed;
 pub(crate) use helpers::{
     calculate_tier_prize, read_raffle, require_admin, require_global_not_paused,
-    require_not_paused, request_randomness, transition_status, transition_to_drawing,
-    validate_token_address, write_raffle, Guard,
+    require_not_paused, transition_status, validate_token_address, write_raffle, Guard,
 };
 #[cfg(any(test, feature = "testutils"))]
 pub use helpers::assert_solvent;
@@ -44,24 +40,15 @@ use raffle_shared::{
     constants::{
         DEFAULT_CLAIM_EXPIRY_SECONDS, DEFAULT_CLAIM_LOCKUP_SECONDS, DEFAULT_SWAP_DEADLINE_SECONDS,
         EMERGENCY_WITHDRAW_DELAY_SECONDS, MAX_CLAIM_LOCKUP_SECONDS, MAX_DESCRIPTION_LENGTH,
-        MAX_PRIZES, MAX_PRIZE_AMOUNT, MAX_PROTOCOL_FEE_BP, MAX_SWEEP_UNCLAIMED_PER_CALL,
+        MAX_PRIZES, MAX_PRIZE_AMOUNT, MAX_PROTOCOL_FEE_BP,
         MAX_SWAP_DEADLINE_SECONDS, MAX_TICKETS_LIMIT, MIN_CLAIM_EXPIRY_SECONDS, MIN_TICKET_PRICE,
         ORACLE_TIMEOUT_LEDGERS,
     },
-    BuyQuote, CancelReason, FailureReason, FairnessData, QuorumConfig, RaffleConfig,
+    BuyQuote, CancelReason, exceeds_internal_randomness_cap, FairnessData, QuorumConfig, RaffleConfig,
     RaffleStats, RaffleStatus, RandomnessSource, RandomnessType, Ticket,
 };
 
-use self::randomness::build_vrf_proof_message;
-
-use crate::events::{
-    CancelScheduled, ContractPaused, ContractUnpaused, DrawTriggered, EmergencyWithdrawn,
-    FeesWithdrawn, MetadataHashUpdated, OracleAddressUpdated, OracleSeedDelivered, PrizeClaimed, PrizeDeposited,
-    PrizeRefunded, ProtocolFeeUpdated, RaffleCancelled, RaffleCreated, RaffleFailed,
-    RaffleFinalized, RaffleStatusChanged, RandomnessFallbackTriggered, RandomnessReceived,
-    RandomnessRequested, StorageWiped, SwapDeadlineUpdated, TicketNftMinted, TicketPurchased,
-    TicketRefunded, TicketSalesPaused, TicketSalesResumed, TokensRescued, WinnerDrawn,
-};
+use crate::events::{OracleSeedDelivered, RaffleCreated};
 
 const RANDOMNESS_MIN_DELAY_LEDGERS: u32 = 10;
 
@@ -183,92 +170,49 @@ pub struct CommitRevealEntry {
 #[contracterror]
 #[derive(Copy, Clone, Debug, Eq, PartialEq, PartialOrd, Ord)]
 pub enum Error {
-    /// Raffle is not in an active state for ticket sales. Code 2.
     RaffleInactive = 2,
-    /// All tickets have been sold. Code 3.
     TicketsSoldOut = 3,
-    /// Caller balance is insufficient for the operation. Code 4.
     InsufficientFunds = 4,
-    /// Caller is not authorized for this action. Code 5.
     NotAuthorized = 5,
-    /// External randomness requested but oracle is not configured. Code 6.
     OracleNotSet = 6,
-    /// Randomness was already requested for this draw. Code 7.
     RandomnessAlreadyRequested = 7,
-    /// No pending randomness request exists. Code 8.
     NoRandomnessRequest = 8,
-    /// Fallback randomness cannot be used yet. Code 9.
     FallbackTooEarly = 9,
-    /// Prize has not been deposited by the creator. Code 11.
     PrizeNotDeposited = 11,
-    /// Prize tier was already claimed or swept. Code 12.
     PrizeAlreadyClaimed = 12,
-    /// Prize deposit was already completed. Code 13.
     PrizeAlreadyDeposited = 13,
-    /// Caller is not the winner for this tier. Code 14.
     NotWinner = 14,
-    /// Claim or sweep attempted before the configured delay elapsed. Code 15.
     ClaimTooEarly = 15,
-    /// One or more input parameters are invalid. Code 21.
     InvalidParameters = 21,
-    /// Ticket quantity is out of range. Code 22.
     InvalidQuantity = 22,
-    /// Raffle status does not allow this operation. Code 23.
     InvalidStatus = 23,
-    /// Contract is paused. Code 24.
     ContractPaused = 24,
-    /// Requested lifecycle transition is not allowed. Code 25.
     InvalidStateTransition = 25,
-    /// Raffle end time has passed. Code 26.
     RaffleExpired = 26,
-    /// Address already holds a ticket when multiples are disallowed. Code 32.
     MultipleTicketsNotAllowed = 32,
-    /// No tickets were sold. Code 33.
     NoTicketsSold = 33,
-    /// Ticket record was not found. Code 34.
     TicketNotFound = 34,
-    /// Integer overflow in a contract calculation. Code 41.
     ArithmeticOverflow = 41,
-    /// Contract initialization was already performed. Code 42.
     AlreadyInitialized = 42,
-    /// Contract has not been initialized. Code 43.
     NotInitialized = 43,
-    /// Reentrant call detected. Code 44.
     Reentrancy = 44,
-    /// Token transfer failed. Code 45.
     TokenTransferFailed = 45,
-    /// No active tickets remain for the operation. Code 46.
     NoActiveTickets = 46,
-    /// Token swap deadline has passed. Code 47.
     DeadlinePassed = 47,
-    /// Swap output below slippage tolerance. Code 48.
     SlippageExceeded = 48,
-    /// Index is out of bounds. Code 49.
     InvalidIndex = 49,
-    /// More prize tiers configured than tickets sold. Code 50.
     MorePrizesThanTickets = 50,
-    /// Computed prize amount is zero. Code 51.
     ZeroPrize = 51,
-    /// Token address is invalid or unsupported. Code 52.
     InvalidTokenAddress = 52,
-    /// Prize tier count exceeds protocol maximum. Code 53.
     TooManyPrizes = 53,
-    /// Emergency withdraw attempted before the delay elapsed. Code 54.
     EmergencyTooEarly = 54,
-    /// Minimum tickets exceed maximum tickets. Code 55.
     InvalidTicketRange = 55,
-    /// Accumulated fees are below the requested withdrawal. Code 56.
     InsufficientAccumulatedFees = 56,
-    /// Ticket purchase exceeds per-transaction cap. Code 58.
     ExceedsMaxTicketsPerTx = 58,
     DrawingAlreadyInProgress = 59,
-    /// Draw has already completed. Code 61.
     DrawingAlreadyComplete = 61,
-    /// End time is in the past or otherwise invalid. Code 62.
     InvalidEndTime = 62,
-    /// Admin address is zero, self, or otherwise invalid. Code 63.
     InvalidAdminAddress = 63,
-    /// Randomness callback received before the minimum delay. Code 64.
     RandomnessTooEarly = 64,
     CancelTimelockActive = 65,
     CancelNotScheduled = 66,
@@ -282,7 +226,7 @@ pub enum Error {
 ///
 /// `max_tickets_per_address` supersedes `allow_multiple`; when unset (0),
 /// `allow_multiple = false` still restricts each address to one ticket.
-fn effective_max_tickets_per_address(raffle: &Raffle) -> Option<u32> {
+pub(crate) fn effective_max_tickets_per_address(raffle: &Raffle) -> Option<u32> {
     if raffle.max_tickets_per_address > 0 {
         Some(raffle.max_tickets_per_address)
     } else if !raffle.allow_multiple {
@@ -292,7 +236,8 @@ fn effective_max_tickets_per_address(raffle: &Raffle) -> Option<u32> {
     }
 }
 
-fn enforce_max_tickets_per_address(
+#[allow(dead_code)]
+pub(crate) fn enforce_max_tickets_per_address(
     env: &Env,
     raffle: &Raffle,
     address: &Address,
@@ -367,7 +312,7 @@ impl RaffleInstance {
             return Err(Error::InvalidParameters);
         }
         if exceeds_internal_randomness_cap(&config.randomness_source, config.prize_amount) {
-            return Err(Error::RandomnessSourceTooWeakForPrize);
+            return Err(Error::InvalidParameters);
         }
         if config.prizes.is_empty() {
             return Err(Error::InvalidParameters);
@@ -614,7 +559,7 @@ if config.randomness_source == RandomnessSource::External {
     /// aggregated via `aggregate_quorum_seeds` and the raffle is finalized.
     pub fn provide_quorum_randomness(
         env: Env,
-        oracle: Address,
+        caller: Address,
         random_seed: u64,
         request_id: u64,
     ) -> Result<(), Error> {
@@ -643,13 +588,14 @@ if config.randomness_source == RandomnessSource::External {
 
         // Extract the oracle list from the Quorum config.
         let (k, oracles) = match &raffle.randomness_source {
-            RandomnessSource::Quorum(QuorumConfig { k, oracles }) => (*k, oracles.clone()),
+            RandomnessSource::Quorum(QuorumConfig { k, oracles }) => (k.clone(), oracles.clone()),
             _ => return Err(Error::InvalidParameters),
         };
 
         // Verify caller is a registered oracle.
         let mut is_registered = false;
-        for i in 0..oracles.len() {
+        let num_oracles = oracles.len();
+        for i in 0..num_oracles {
             if let Some(addr) = oracles.get(i) {
                 if addr == caller {
                     is_registered = true;
@@ -995,7 +941,5 @@ if config.randomness_source == RandomnessSource::External {
     }
 }
 
-#[cfg(test)]
-mod test;
 #[cfg(test)]
 mod tests;

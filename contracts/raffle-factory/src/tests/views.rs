@@ -1,41 +1,26 @@
 //! Edge-case tests for the views module pagination and coverage.
 
 use raffle_shared::{PaginationParams, DEFAULT_PAGE_LIMIT, MAX_PAGE_LIMIT};
-use soroban_sdk::{testutils::Address as _, Address, Env};
+use soroban_sdk::{testutils::Address as _, Address, BytesN, Env};
 
 use crate::{RaffleFactory, RaffleFactoryClient, RaffleConfig};
+
+use crate::tests::test_raffle_config;
 
 fn setup_with_raffles(env: &Env, count: u32) -> RaffleFactoryClient<'_> {
     let admin = Address::generate(env);
     let treasury = Address::generate(env);
+    let wasm_hash = BytesN::from_array(env, &[0u8; 32]);
     let contract_id = env.register(RaffleFactory, ());
     let client = RaffleFactoryClient::new(env, &contract_id);
 
-    client.initialize(&admin, &treasury, &60);
+    client.init_factory(&admin, &wasm_hash, &0u32, &treasury);
 
     let creator = Address::generate(env);
     let token = env.register_stellar_asset_contract_v2(admin.clone()).address();
 
     for _ in 0..count {
-        let config = RaffleConfig {
-            ticket_price: 100,
-            max_tickets: 10,
-            end_time: 0,
-            token: token.clone(),
-            randomness_source: crate::RandomnessSource::Internal,
-            description: soroban_sdk::String::from_str(env, "test"),
-            category: soroban_sdk::String::from_str(env, "general"),
-            metadata_uri: soroban_sdk::String::from_str(env, ""),
-        };
-        env.mock_auths(&[soroban_sdk::testutils::MockAuth {
-            address: &creator,
-            invoke: &soroban_sdk::testutils::MockAuthInvoke {
-                contract: &contract_id,
-                fn_name: "create_raffle",
-                args: (creator.clone(), config).into_val(env),
-                sub_invokes: &[],
-            },
-        }]);
+        let config = test_raffle_config(env, &token);
         client.create_raffle(&creator, &config);
     }
 
@@ -185,9 +170,10 @@ fn get_admin_returns_correct_address() {
     let env = Env::default();
     let admin = Address::generate(&env);
     let treasury = Address::generate(&env);
+    let wasm_hash = BytesN::from_array(&env, &[0u8; 32]);
     let contract_id = env.register(RaffleFactory, ());
     let client = RaffleFactoryClient::new(&env, &contract_id);
-    client.initialize(&admin, &treasury, &60);
+    client.init_factory(&admin, &wasm_hash, &0u32, &treasury);
 
-    assert_eq!(client.get_admin(), Ok(admin));
+    assert_eq!(client.get_admin(), admin);
 }

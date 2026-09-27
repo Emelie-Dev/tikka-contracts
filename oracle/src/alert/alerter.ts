@@ -1,6 +1,6 @@
 export type AlertSeverity = 'info' | 'warning' | 'critical';
 
-import { logger } from './logger';
+import { logger } from '../logging/logger';
 
 export interface AlertPayload {
   type: string;

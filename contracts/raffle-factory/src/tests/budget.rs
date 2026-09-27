@@ -1,9 +1,10 @@
-//! Factory instruction-budget regression tests (#831).
+extern crate std;
+use std::format;
 
-use raffle_shared::{PaginationParams, MAX_PAGE_LIMIT};
+use raffle_shared::{PaginationParams, RandomnessSource, RaffleConfigBuilder, MAX_PAGE_LIMIT};
 use soroban_sdk::{testutils::Address as _, Address, BytesN, Env, String, Vec as SdkVec};
 
-use crate::{RaffleConfig, RaffleFactory, RaffleFactoryClient, RandomnessSource};
+use crate::{RaffleConfig, RaffleFactory, RaffleFactoryClient};
 
 const TOLERANCE_FRACTION: f64 = 0.10;
 
@@ -59,36 +60,16 @@ fn setup_factory(env: &Env) -> (RaffleFactoryClient<'_>, Address, Address) {
 }
 
 fn test_config(env: &Env, payment_token: &Address) -> RaffleConfig {
-    RaffleConfig {
-        description: String::from_str(env, "budget"),
-        end_time: 0,
-        no_deadline: true,
-        max_tickets: 10,
-        max_tickets_per_tx: 10,
-        max_tickets_per_address: 0,
-        min_tickets: 1,
-        allow_multiple: true,
-        ticket_price: 10_000,
-        payment_token: payment_token.clone(),
-        prize_amount: 10_000,
-        prizes: SdkVec::from_array(env, [10_000u32]),
-        randomness_source: RandomnessSource::Internal,
-        oracle_address: None,
-        protocol_fee_bp: 0,
-        treasury_address: None,
-        swap_router: None,
-        tikka_token: None,
-        metadata_hash: BytesN::from_array(env, &[1u8; 32]),
-        claim_lockup_seconds: None,
-        swap_deadline_seconds: None,
-        early_bird_ticket_percentage: 0,
-        early_bird_discount_bp: 0,
-        category: None,
-        unique_winners: false,
-        bundles: SdkVec::new(env),
-        prize_token: None,
-        nft_contract: None,
-    }
+    RaffleConfigBuilder::new(env, payment_token.clone())
+        .description(String::from_str(env, "budget"))
+        .max_tickets(10)
+        .max_tickets_per_tx(10)
+        .ticket_price(10_000)
+        .prize_amount(10_000)
+        .prizes(SdkVec::from_array(env, [10_000u32]))
+        .metadata_hash(BytesN::from_array(env, &[1u8; 32]))
+        .build()
+        .unwrap()
 }
 
 #[test]

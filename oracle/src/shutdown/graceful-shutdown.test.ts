@@ -144,6 +144,19 @@ describe('GracefulShutdown – drains in-flight jobs', () => {
 
     expect(queue.size()).toBe(0);
   });
+
+  it('handles shutdown before startup completes without throwing TypeError', async () => {
+    const { sd, stopListening, exitFn } = makeShutdown({
+      jobs: [makeJob(1n)],
+      processJob: async () => {
+        throw new Error('Pipeline is not initialized: QuorumService is unavailable');
+      },
+    });
+    sd.register(stopListening);
+    await sd.shutdown();
+
+    expect(exitFn).toHaveBeenCalledWith(0);
+  });
 });
 
 // ─── timeout / force-exit ─────────────────────────────────────────────────

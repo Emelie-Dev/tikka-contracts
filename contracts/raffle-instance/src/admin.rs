@@ -4,7 +4,7 @@ use raffle_shared::CancelReason;
 use raffle_shared::constants::TIMELOCK_DELAY_SECONDS;
 
 use crate::events::{
-    CancelScheduled, ContractPaused, ContractUnpaused, EmergencyWithdrawn, FeesWithdrawn,
+    CancelScheduled, ContractPaused, ContractUnpaused, DustSwept, EmergencyWithdrawn, FeesWithdrawn,
     MetadataHashUpdated, OracleAddressUpdated, ProtocolFeeUpdated, RaffleCancelled, StorageWiped,
     SwapDeadlineUpdated, TicketSalesPaused, TicketSalesResumed, TokensRescued,
 };
@@ -26,7 +26,7 @@ fn outstanding_ticket_refunds(env: &Env, raffle: &crate::Raffle) -> Result<i128,
     Ok(outstanding)
 }
 
-fn outstanding_prize(env: &Env, raffle: &crate::Raffle) -> Result<i128, Error> {
+fn outstanding_prize(_env: &Env, raffle: &crate::Raffle) -> Result<i128, Error> {
     if !raffle.prize_deposited {
         return Ok(0);
     }
@@ -75,6 +75,7 @@ fn token_entitlement(env: &Env, raffle: &crate::Raffle, token: &Address) -> Resu
     Ok(entitlement)
 }
 
+#[allow(dead_code)]
 pub(crate) fn set_admin(env: Env, new_admin: Address) -> Result<(), Error> {
     let _old = require_admin(&env)?;
     if !new_admin.exists() || new_admin == env.current_contract_address() {

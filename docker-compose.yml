@@ -3,9 +3,45 @@ services:
     build: ./oracle
     env_file: .env
     restart: unless-stopped
+    restart_policy:
+      condition: unless-stopped
+      delay: 5s
+      max_attempts: 5
+      window: 120s
+    
+    # Data persistence: ledger checkpoint and deduplication store
+    volumes:
+      - oracle_data:/usr/src/app/data
+    
+    # Container ports for health and metrics endpoints
+    ports:
+      - "9090:9090"
+    
+    # Resource limits to prevent memory leaks from taking down the host
+    deploy:
+      resources:
+        limits:
+          cpus: "1"
+          memory: 512M
+        reservations:
+          cpus: "0.5"
+          memory: 256M
+    
+    # Log rotation to prevent unbounded log growth
+    logging:
+      driver: "json-file"
+      options:
+        max-size: "10m"
+        max-file: "5"
+        labels: "service=oracle"
+    
     healthcheck:
-      test: ["CMD-SHELL", "pgrep -f 'node dist/index.js' || exit 1"]
+      test: ["CMD-SHELL", "curl -f http://localhost:9090/health || exit 1"]
       interval: 30s
       timeout: 10s
       retries: 3
       start_period: 10s
+
+volumes:
+  oracle_data:
+    driver: local

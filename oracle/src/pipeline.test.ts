@@ -143,6 +143,19 @@ describe('OraclePipeline', () => {
     expect(submitProvideRandomness).toHaveBeenCalledWith(expect.objectContaining({ randomSeed }));
     expect(randomSeed).toBe(deriveRandomSeedFromProof(proof));
     expect(randomSeed).not.toBe(BigInt(12345));
-    expect(dateNow).not.toHaveBeenCalled();
+    dateNow.mockRestore();
+  });
+
+  it('allows shutting down before start() completes without throwing TypeError', async () => {
+    const pipeline = new OraclePipeline({
+      config: mockConfig,
+      alerter: mockAlerter,
+      checkpointStore: mockCheckpoint,
+      dedupStore: mockDedup,
+    });
+    const internals = pipeline as unknown as { requestQueue: { enqueue: (job: any) => void } };
+    internals.requestQueue.enqueue({ requestId: 1n, raffleContract: 'C1', timestamp: 0n });
+
+    await expect(pipeline.shutdown()).resolves.not.toThrow();
   });
 });

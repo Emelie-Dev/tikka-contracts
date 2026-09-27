@@ -101,6 +101,7 @@ use soroban_sdk::{xdr::ToXdr, Address, Bytes, BytesN, Env, Vec};
 ///
 /// See also: module-level documentation and
 /// [`docs/RANDOMNESS.md`](../../../../docs/RANDOMNESS.md).
+#[allow(dead_code)]
 pub fn build_internal_seed(env: &Env, raffle_id: &Address) -> BytesN<32> {
     let timestamp = env.ledger().timestamp();
     let sequence = env.ledger().sequence();
@@ -118,6 +119,7 @@ pub fn build_internal_seed(env: &Env, raffle_id: &Address) -> BytesN<32> {
 /// A zero hash would be indistinguishable from a crypto subsystem failure, so
 /// this function panics rather than returning silently — a zeroed seed would
 /// make winner selection trivially reproducible and insecure.
+#[allow(dead_code)]
 fn hash_bytes32(env: &Env, input: &Bytes) -> BytesN<32> {
     let hash: BytesN<32> = env.crypto().sha256(input).into();
     if hash.to_array() == [0u8; 32] {
@@ -133,6 +135,7 @@ fn hash_bytes32(env: &Env, input: &Bytes) -> BytesN<32> {
 /// [`do_finalize_with_seed`](crate::helpers::do_finalize_with_seed) can
 /// select winners through a single call-site regardless of the randomness
 /// source.
+#[allow(dead_code)]
 pub trait WinnerSelectionStrategy {
     /// Return `winner_count` distinct zero-based ticket indices chosen
     /// uniformly at random from `[0, total_tickets)`.
@@ -152,6 +155,7 @@ pub trait WinnerSelectionStrategy {
 ///
 /// **For low-stakes raffles only** — see [`build_internal_seed`] and the
 /// module documentation for the full security caveat.
+#[allow(dead_code)]
 pub struct PrngWinnerSelection {
     pub raffle_id: Address,
     /// Number of tickets sold at draw time, mixed into the seed so that
@@ -160,6 +164,7 @@ pub struct PrngWinnerSelection {
     pub tickets_sold: u32,
 }
 
+#[allow(dead_code)]
 impl PrngWinnerSelection {
     /// Create a new `PrngWinnerSelection` for the given raffle and ticket count.
     pub fn new(raffle_id: Address, tickets_sold: u32) -> Self {
@@ -205,7 +210,7 @@ impl WinnerSelectionStrategy for PrngWinnerSelection {
         }
 
         let effective_count = winner_count.min(total_tickets) as usize;
-        let mut drawn_count: usize = 0;
+        let drawn_count: usize = 0;
 
         // Draw up to total_tickets times, collecting unique indices until we have
         // effective_count winners.  This is bounded by total_tickets iterations

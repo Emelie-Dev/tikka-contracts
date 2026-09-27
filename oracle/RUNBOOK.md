@@ -2,6 +2,92 @@
 
 Operational guide for the Tikka randomness oracle service.
 
+## First-Run Setup
+
+The oracle service is deployed via `docker-compose.yml` from the repository root. Before starting, prepare your environment:
+
+### 1. Create environment file
+
+Copy `.env.example` to `.env` and populate with your production credentials:
+
+```bash
+cp .env.example .env
+# Edit .env with:
+# - ORACLE_SECRET_KEY: Ed25519 secret key (S... format or 32-byte hex/base64)
+# - STELLAR_RPC_URL: Soroban RPC endpoint
+# - FACTORY_CONTRACT_ID: Raffle factory contract address
+# - Optional: ALERT_WEBHOOK_URL for operational alerts
+```
+
+### 2. Start the service
+
+```bash
+docker-compose up -d
+```
+
+Docker Compose will:
+- Build the oracle service from `oracle/Dockerfile`
+- Mount a persistent volume at `/usr/src/app/data` for checkpoint and dedup state
+- Expose the health and metrics endpoints on port 9090
+- Apply resource limits (512 MB memory, 1 CPU) to prevent runaway consumption
+- Rotate logs to prevent unbounded growth
+
+### 3. Verify startup
+
+```bash
+# Check service is running
+docker-compose ps
+
+# View logs
+docker-compose logs -f oracle
+
+# Check health endpoint
+curl http://localhost:9090/health
+
+# View metrics
+curl http://localhost:9090/metrics
+```
+
+### 4. Local development
+
+For development, copy `docker-compose.override.yml.example` to `docker-compose.override.yml`:
+
+```bash
+cp docker-compose.override.yml.example docker-compose.override.yml
+```
+
+This disables production resource limits and enables debug logging without modifying the committed compose file.
+
+## Data Persistence
+
+The oracle service maintains two critical files in the `/data` volume:
+
+### checkpoint.json
+
+**Purpose:** Tracks the last successfully processed ledger number  
+**Size:** ~100 bytes  
+**Persistence:** Must survive container restarts to avoid event gaps  
+**Loss impact:** If lost, the oracle resumes from the current ledger and misses any `RandomnessRequested` events that occurred while it was down. Fallback: the raffle will timeout on-chain after `ORACLE_TIMEOUT_LEDGERS` and use internal PRNG.
+
+### dedup.json
+
+**Purpose:** Prevents duplicate submission of randomness seeds  
+**Size:** Grows with the number of unique (raffle, request_id) pairs processed  
+**Persistence:** Must survive container restarts to prevent double-submissions  
+**Loss impact:** If lost, requests that were successfully submitted on-chain may be re-submitted after restart, causing `RandomnessAlreadyProvided` errors on-chain.
+
+### Volume mount configuration
+
+The `docker-compose.yml` mounts a named volume `oracle_data` at `/usr/src/app/data`:
+
+```yaml
+volumes:
+  oracle_data:
+    driver: local
+```
+
+This ensures data persists across container restarts, upgrades, and removals. For Kubernetes deployments, mount a persistent volume claim at `/data`.
+
 ## Health and Metrics Endpoints
 
 | Endpoint | Purpose |
@@ -10,6 +96,8 @@ Operational guide for the Tikka randomness oracle service.
 | `GET /metrics` | Prometheus text exposition format |
 
 Default port: `9090` (override with `HEALTH_PORT`).
+
+Endpoints are exposed on the host as `http://localhost:9090` via the docker-compose port mapping.
 
 ## Metrics Reference
 

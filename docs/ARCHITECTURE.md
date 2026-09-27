@@ -1,6 +1,6 @@
 # Tikka Architecture
 
-This document explains how the factory, raffle instances, oracle, and clients interact.
+This document explains how the factory, raffle instances, oracle, and clients interact. For in-depth oracle service architecture, see [ORACLE.md](ORACLE.md).
 
 ## Factory -> Instance -> Oracle Flow
 
@@ -31,7 +31,7 @@ graph TB
 1. The factory deploys a new raffle instance and returns the new instance address.
 1. Users buy tickets directly on the raffle instance contract.
 1. When finalization starts, the instance emits randomness request events to the network.
-1. The oracle service polls those events and calls `provide_randomness` back on the instance.
+1. The oracle service polls those events and calls `provide_randomness` back on the instance (see [ORACLE.md](ORACLE.md) for pipeline details).
 1. The instance finalizes winners, emits finalization events, and winners claim prizes.
 
 ## RaffleStatus State Machine

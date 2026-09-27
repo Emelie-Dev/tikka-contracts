@@ -4,7 +4,28 @@ extern crate std;
 use std::vec;
 
 use crate::*;
-use raffle_shared::RaffleConfigBuilder;
+pub(crate) use raffle_shared::RaffleConfigBuilder;
+
+pub(crate) fn init_bounds_config(
+	env: &Env,
+	payment_token: &Address,
+	description: String,
+	max_tickets: u32,
+	ticket_price: i128,
+	prize_amount: i128,
+	prizes: soroban_sdk::Vec<u32>,
+) -> RaffleConfig {
+	RaffleConfigBuilder::new(env, payment_token.clone())
+		.description(description)
+		.max_tickets(max_tickets)
+		.max_tickets_per_tx(max_tickets)
+		.ticket_price(ticket_price)
+		.prize_amount(prize_amount)
+		.prizes(prizes)
+		.metadata_hash(BytesN::from_array(env, &[72u8; 32]))
+		.build()
+		.unwrap()
+}
 pub(crate) use crate::{RaffleInstance as Contract, RaffleInstanceClient as ContractClient};
 use soroban_sdk::{
 	contract, contractimpl,
@@ -124,47 +145,7 @@ pub(crate) fn init_bounds_env() -> (Env, Address, Address, Address, Address, Add
 	(env, contract_id, factory, admin, creator, payment_token)
 }
 
-pub(crate) fn init_bounds_config(
-	env: &Env,
-	payment_token: &Address,
-	description: String,
-	max_tickets: u32,
-	ticket_price: i128,
-	prize_amount: i128,
-	prizes: soroban_sdk::Vec<u32>,
-) -> RaffleConfig {
-	RaffleConfig {
-		description,
-		end_time: 0,
-		no_deadline: true,
-		max_tickets,
-		max_tickets_per_tx: max_tickets,
-		max_tickets_per_address: 0,
-		min_tickets: 1,
-		allow_multiple: true,
-		ticket_price,
-		payment_token: payment_token.clone(),
-		prize_amount,
-		prizes,
-		randomness_source: RandomnessSource::Internal,
-		oracle_address: None,
-		protocol_fee_bp: 0,
-		treasury_address: None,
-		swap_router: None,
-		tikka_token: None,
-		metadata_hash: BytesN::from_array(env, &[72u8; 32]),
-		claim_lockup_seconds: None,
-		claim_expiry_seconds: None,
-		swap_deadline_seconds: None,
-		early_bird_ticket_percentage: 0,
-		early_bird_discount_bp: 0,
-		category: None,
-		unique_winners: false,
-		bundles: soroban_sdk::Vec::new(env),
-		prize_token: None,
-		nft_contract: None,
-	}
-}
+
 
 pub mod budget;
 pub mod fairness;
@@ -176,3 +157,4 @@ pub mod claim;
 pub mod init;
 pub mod admin;
 pub mod tickets;
+pub mod reentrancy;

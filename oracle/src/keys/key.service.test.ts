@@ -65,6 +65,19 @@ describe('KeyService', () => {
     service.shutdown();
     expect(() => service.sign(Buffer.from('x'))).toThrow('not initialized');
   });
+
+  it('allows two sequential initialisations without deleting env var', async () => {
+    const adapter = new EnvSecretsAdapter();
+    const secret1 = await adapter.getSecret('ORACLE_SECRET_KEY');
+    const secret2 = await adapter.getSecret('ORACLE_SECRET_KEY');
+    expect(secret1.toString('hex')).toBe(secret2.toString('hex'));
+    expect(process.env['ORACLE_SECRET_KEY']).toBeDefined();
+  });
+
+  it('names the missing variable in EnvSecretsAdapter error message', async () => {
+    const adapter = new EnvSecretsAdapter();
+    await expect(adapter.getSecret('CUSTOM_VAR')).rejects.toThrow('CUSTOM_VAR env var not set');
+  });
 });
 
 import nock from 'nock';

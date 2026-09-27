@@ -93,6 +93,7 @@ use crate::{
 /// Emits [`events::RaffleCreated`].
 ///
 /// See also: [`docs/EVENTS.md`](../../../../docs/EVENTS.md) — `RaffleCreated`.
+#[allow(dead_code)]
 pub(crate) fn init(
     env: Env,
     factory: Address,
@@ -157,6 +158,7 @@ pub(crate) fn init(
         metadata_hash: config.metadata_hash.clone(),
         unique_winners: config.unique_winners,
         nft_contract: config.nft_contract,
+        bundles: config.bundles.clone(),
     };
     write_raffle(&env, &raffle);
     env.storage().instance().set(&DataKey::Factory, &factory);

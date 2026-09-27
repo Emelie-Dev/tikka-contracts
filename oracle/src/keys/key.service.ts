@@ -16,11 +16,9 @@ export class EnvSecretsAdapter implements SecretsAdapter {
     }
     const secret = process.env[key];
     if (!secret) {
-      throw new Error('ORACLE_SECRET_KEY env var not set');
+      throw new Error(`${key} env var not set`);
     }
-    const buf = Buffer.from(secret);
-    delete process.env[key]; // clean up env var to avoid exposure
-    return buf;
+    return Buffer.from(secret);
   }
 }
 
