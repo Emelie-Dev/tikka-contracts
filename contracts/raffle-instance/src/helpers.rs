@@ -957,7 +957,12 @@ fn unclaimed_prize_total(raffle: &Raffle) -> i128 {
 
     let mut total = 0i128;
     for tier_index in 0..raffle.winners.len() {
-        if !raffle.claimed_winners.get(tier_index).unwrap_or(false) {
+        if !raffle
+            .winners
+            .get(tier_index)
+            .map(|winner| winner.claimed)
+            .unwrap_or(false)
+        {
             let amount = calculate_tier_prize(raffle, tier_index)
                 .expect("solvency invariant failed to calculate tier prize");
             total = checked_add(total, amount, "unclaimed prizes");
