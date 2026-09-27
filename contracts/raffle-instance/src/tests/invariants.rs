@@ -108,7 +108,7 @@ fn assert_contract_solvent(env: &Env, contract_id: &Address) {
     env.as_contract(contract_id, || assert_solvent(env));
 }
 
-fn run_solvency_lifecycle(ticket_count: u32, first_tier_bp: u32, cancel: bool) {
+fn run_solvency_lifecycle(ticket_count: u32, first_tier_bp: u32, fee_bp: u32, cancel: bool) {
     let env = Env::default();
     env.mock_all_auths();
     env.ledger().set_timestamp(1_000);
@@ -145,7 +145,7 @@ fn run_solvency_lifecycle(ticket_count: u32, first_tier_bp: u32, cancel: bool) {
         prizes: soroban_sdk::vec![&env, first_tier_bp, 10_000 - first_tier_bp],
         randomness_source: raffle_shared::RandomnessSource::Internal,
         oracle_address: None,
-        protocol_fee_bp: if cancel { 0 } else { 1_000 },
+        protocol_fee_bp: if cancel { 0 } else { fee_bp },
         treasury_address: Some(treasury.clone()),
         swap_router: None,
         tikka_token: None,
@@ -222,12 +222,12 @@ fn run_solvency_lifecycle(ticket_count: u32, first_tier_bp: u32, cancel: bool) {
 
 #[test]
 fn claim_withdraw_and_sweep_preserve_solvency() {
-    run_solvency_lifecycle(4, 5_000, false);
+    run_solvency_lifecycle(4, 5_000, 1_000, false);
 }
 
 #[test]
 fn cancelled_raffle_refunds_settle_escrow_to_zero() {
-    run_solvency_lifecycle(4, 5_000, true);
+    run_solvency_lifecycle(4, 5_000, 1_000, true);
 }
 
 proptest! {
@@ -237,8 +237,9 @@ proptest! {
     fn lifecycle_solvency_holds_for_ticket_counts_and_tier_splits(
         ticket_count in 4u32..=8,
         first_tier_bp in 1u32..10_000,
+        fee_bp in 0u32..=2_000,
     ) {
-        run_solvency_lifecycle(ticket_count, first_tier_bp, false);
+        run_solvency_lifecycle(ticket_count, first_tier_bp, fee_bp, false);
     }
 }
 

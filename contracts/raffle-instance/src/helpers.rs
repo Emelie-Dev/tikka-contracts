@@ -20,33 +20,7 @@ pub(crate) fn write_raffle(env: &Env, raffle: &Raffle) {
     env.storage().instance().set(&DataKey::Raffle, raffle);
 }
 
-pub(crate) fn calculate_buy_quote(raffle: &Raffle, quantity: u32) -> Result<BuyQuote, Error> {
-    if quantity == 0 {
-        return Err(Error::InvalidQuantity);
-    }
-    let gross = raffle
-        .ticket_price
-        .checked_mul(quantity as i128)
-        .ok_or(Error::ArithmeticOverflow)?;
-    let discount = if raffle.early_bird_ticket_percentage > 0
-        && raffle.tickets_sold < raffle.max_tickets * raffle.early_bird_ticket_percentage / 100
-    {
-        gross
-            .checked_mul(raffle.early_bird_discount_bp as i128)
-            .ok_or(Error::ArithmeticOverflow)?
-            / 10_000
-    } else {
-        0
-    };
-    let net = gross.checked_sub(discount).ok_or(Error::ArithmeticOverflow)?;
-    let fee = net
-        .checked_mul(raffle.protocol_fee_bp as i128)
-        .ok_or(Error::ArithmeticOverflow)?
-        / 10_000;
-    let net_to_pay = net.checked_add(fee).ok_or(Error::ArithmeticOverflow)?;
-    let effective_ticket_price = net / quantity as i128;
-    Ok(BuyQuote { gross, discount, fee, net_to_pay, effective_ticket_price })
-}
+
 
 fn resolve_unique_winner(
     env: &Env,
@@ -395,54 +369,7 @@ pub(crate) fn validate_token_address(env: &Env, token_address: &Address) -> Resu
 /// configured threshold and returns the gross, discount, fee, net charge, and
 /// effective per-ticket price.  Both `buy_tickets` and `preview_buy` route
 /// through this function so quote and execution cannot diverge.
-pub(crate) fn calculate_buy_quote(raffle: &Raffle, quantity: u32) -> Result<BuyQuote, Error> {
-    if quantity == 0 {
-        return Err(Error::InvalidQuantity);
-    }
 
-    let gross = raffle
-        .ticket_price
-        .checked_mul(quantity as i128)
-        .ok_or(Error::ArithmeticOverflow)?;
-
-    let discount = if raffle.early_bird_discount_bp > 0
-        && raffle.early_bird_ticket_percentage > 0
-    {
-        let threshold = (raffle.max_tickets as u64)
-            .checked_mul(raffle.early_bird_ticket_percentage as u64)
-            .ok_or(Error::ArithmeticOverflow)?
-            / 100;
-        if (raffle.tickets_sold as u64) < threshold {
-            gross
-                .checked_mul(raffle.early_bird_discount_bp as i128)
-                .ok_or(Error::ArithmeticOverflow)?
-                / 10000
-        } else {
-            0
-        }
-    } else {
-        0
-    };
-
-    let net_to_pay = gross
-        .checked_sub(discount)
-        .ok_or(Error::ArithmeticOverflow)?;
-
-    let fee = net_to_pay
-        .checked_mul(raffle.protocol_fee_bp as i128)
-        .ok_or(Error::ArithmeticOverflow)?
-        / 10000;
-
-    let effective_ticket_price = net_to_pay / (quantity as i128);
-
-    Ok(BuyQuote {
-        gross,
-        discount,
-        fee,
-        net_to_pay,
-        effective_ticket_price,
-    })
-}
 
 pub(crate) fn build_internal_seed_u64(env: &Env) -> u64 {
     let xdr = (
@@ -1051,4 +978,57 @@ pub(crate) fn calculate_buy_quote(
         .ok_or(Error::ArithmeticOverflow)?;
 
     Ok((total_price, protocol_fee, effective_ticket_price))
+}
+
+pub(crate) fn calculate_buy_quote(raffle: &Raffle, quantity: u32) -> Result<BuyQuote, Error> {
+    if quantity == 0 {
+        return Err(Error::InvalidQuantity);
+    }
+    let mut unit = raffle.ticket_price;
+    for i in 0..raffle.bundles.len() {
+        let b = raffle.bundles.get(i).unwrap();
+        if b.quantity <= quantity {
+            unit = b.price_per_ticket;
+        }
+    }
+    let gross = unit
+        .checked_mul(quantity as i128)
+        .ok_or(Error::ArithmeticOverflow)?;
+    let mut discount: i128 = 0;
+    if raffle.early_bird_ticket_percentage > 0 && raffle.early_bird_discount_bp > 0 {
+        let eb_cap = (raffle.max_tickets as u64)
+            .saturating_mul(raffle.early_bird_ticket_percentage as u64)
+            / 100;
+        let sold = raffle.tickets_sold as u64;
+        if sold < eb_cap {
+            let remaining = (eb_cap - sold).min(quantity as u64) as i128;
+            let disc_per = unit
+                .checked_mul(raffle.early_bird_discount_bp as i128)
+                .ok_or(Error::ArithmeticOverflow)?
+                / 10_000;
+            discount = disc_per
+                .checked_mul(remaining)
+                .ok_or(Error::ArithmeticOverflow)?;
+        }
+    }
+    let after_discount = gross
+        .checked_sub(discount)
+        .ok_or(Error::ArithmeticOverflow)?;
+    let fee = after_discount
+        .checked_mul(raffle.protocol_fee_bp as i128)
+        .ok_or(Error::ArithmeticOverflow)?
+        / 10_000;
+    let net_to_pay = after_discount
+        .checked_add(fee)
+        .ok_or(Error::ArithmeticOverflow)?;
+    let effective_ticket_price = after_discount
+        .checked_div(quantity as i128)
+        .ok_or(Error::ArithmeticOverflow)?;
+    Ok(BuyQuote {
+        gross,
+        discount,
+        fee,
+        net_to_pay,
+        effective_ticket_price,
+    })
 }

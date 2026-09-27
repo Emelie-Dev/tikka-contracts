@@ -231,15 +231,16 @@ pub(crate) fn buy_tickets(env: Env, buyer: Address, quantity: u32) -> Result<u32
     if protocol_fee > 0 {
         if let Some(treasury) = &raffle.treasury_address {
             token_client.transfer(&contract_address, treasury, &protocol_fee);
+        } else {
+            let prev: i128 = env
+                .storage()
+                .instance()
+                .get(&DataKey::AccumulatedFees)
+                .unwrap_or(0);
+            env.storage()
+                .instance()
+                .set(&DataKey::AccumulatedFees, &(prev + protocol_fee));
         }
-        let prev: i128 = env
-            .storage()
-            .instance()
-            .get(&DataKey::AccumulatedFees)
-            .unwrap_or(0);
-        env.storage()
-            .instance()
-            .set(&DataKey::AccumulatedFees, &(prev + protocol_fee));
     }
 
     //  6. NOW mutate state (write tickets)
@@ -490,16 +491,11 @@ pub(crate) fn buy_tickets_for(env: Env, buyer: Address, recipient: Address, quan
 
     let timestamp = env.ledger().timestamp();
         fix/security-checks-effects-763
-    let total_price = raffle
-        .ticket_price
-        .checked_mul(quantity as i128)
-        .ok_or(Error::ArithmeticOverflow)?;
-    let protocol_fee = total_price
-        .checked_mul(raffle.protocol_fee_bp as i128)
-        .ok_or(Error::ArithmeticOverflow)?
-        / 10000;
+    let quote = calculate_buy_quote(&raffle, quantity)?;
+    let total_price = quote.net_to_pay;
+    let protocol_fee = quote.fee;
 
-    let protocol_fee = total_price.checked_mul(raffle.protocol_fee_bp as i128).ok_or(Error::ArithmeticOverflow)? / 10000;
+    
         master
 
     //  3. Verify no concurrent modification
@@ -532,15 +528,16 @@ pub(crate) fn buy_tickets_for(env: Env, buyer: Address, recipient: Address, quan
     if protocol_fee > 0 {
         if let Some(treasury) = &raffle.treasury_address {
             token_client.transfer(&contract_address, treasury, &protocol_fee);
+        } else {
+            let prev: i128 = env
+                .storage()
+                .instance()
+                .get(&DataKey::AccumulatedFees)
+                .unwrap_or(0);
+            env.storage()
+                .instance()
+                .set(&DataKey::AccumulatedFees, &(prev + protocol_fee));
         }
-        let prev: i128 = env
-            .storage()
-            .instance()
-            .get(&DataKey::AccumulatedFees)
-            .unwrap_or(0);
-        env.storage()
-            .instance()
-            .set(&DataKey::AccumulatedFees, &(prev + protocol_fee));
     }
 
     //  6. NOW mutate state (write tickets)

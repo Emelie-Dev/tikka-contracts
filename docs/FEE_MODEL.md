@@ -1,5 +1,7 @@
 # Tikka Protocol Fee Model
 
+The fee model is additive: the buyer pays the fee on top of the ticket price.
+
 Protocol fees are charged at two points: ticket purchase and prize claim. Each
 site uses a single rounding rule, always in the protocol's favour.
 
