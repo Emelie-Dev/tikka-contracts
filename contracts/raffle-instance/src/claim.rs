@@ -1,3 +1,4 @@
+use raffle_shared::apply_bp;
 use raffle_shared::constants::MAX_SWEEP_UNCLAIMED_PER_CALL;
 use soroban_sdk::{token, Address, Env};
 
@@ -37,12 +38,8 @@ pub(crate) fn claim_prize(env: Env, winner: Address, tier_index: u32) -> Result<
         return Err(Error::ZeroPrize);
     }
 
-    let protocol_fee = amount
-        .checked_mul(raffle.protocol_fee_bp as i128)
-        .ok_or(Error::ArithmeticOverflow)?
-        .checked_add(9999)
-        .ok_or(Error::ArithmeticOverflow)?
-        / 10000;
+    let protocol_fee = apply_bp(amount, raffle.protocol_fee_bp)
+        .ok_or(Error::ArithmeticOverflow)?;
 
     let net_amount = amount
         .checked_sub(protocol_fee)
@@ -80,16 +77,9 @@ pub(crate) fn claim_prize(env: Env, winner: Address, tier_index: u32) -> Result<
 
     if protocol_fee > 0 {
         if let Some(treasury) = &raffle.treasury_address {
-            tc.transfer(&env.current_contract_address(), treasury, &protocol_fee);
+            tc.try_transfer(&env.current_contract_address(), treasury, &protocol_fee)
+                .map_err(|_| Error::TokenTransferFailed)?;
         }
-        let prev: i128 = env
-            .storage()
-            .instance()
-            .get(&DataKey::AccumulatedFees)
-            .unwrap_or(0);
-        env.storage()
-            .instance()
-            .set(&DataKey::AccumulatedFees, &(prev + protocol_fee));
     }
 
     PrizeClaimed {

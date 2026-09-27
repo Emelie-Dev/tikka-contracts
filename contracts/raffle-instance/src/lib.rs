@@ -724,9 +724,9 @@ if config.randomness_source == RandomnessSource::External {
     pub fn trigger_randomness_fallback(
         env: Env,
         caller: Address,
-        do_refund: bool,
+        do_cancel: bool,
     ) -> Result<(), Error> {
-        let result = draw::trigger_randomness_fallback(env.clone(), caller, do_refund);
+        let result = draw::trigger_randomness_fallback(env.clone(), caller, do_cancel);
         #[cfg(any(test, feature = "testutils"))]
         assert_solvent_after_success(&env, &result);
         result

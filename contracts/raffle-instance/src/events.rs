@@ -109,8 +109,7 @@ pub struct TicketPurchased {
     pub effective_ticket_price: i128,
     /// Total paid: `effective_ticket_price * quantity` after any discounts.
     pub total_paid: i128,
-    /// Protocol fee (basis points of `total_paid`) withheld and forwarded to
-    /// the treasury.
+    /// Protocol fee (basis points of `total_paid`) held for later withdrawal.
     pub protocol_fee: i128,
     /// Ledger timestamp of the purchase.
     pub timestamp: u64,
@@ -135,7 +134,7 @@ pub struct TicketGifted {
     pub effective_ticket_price: i128,
     /// Total paid by `buyer`.
     pub total_paid: i128,
-    /// Protocol fee (basis points of `total_paid`).
+    /// Protocol fee (basis points of `total_paid`) held for later withdrawal.
     pub protocol_fee: i128,
     /// Ledger timestamp of the gift.
     pub timestamp: u64,
@@ -275,7 +274,8 @@ pub struct WinnerDrawn {
     pub timestamp: u64,
 }
 
-/// Emitted when a raffle is cancelled and (if applicable) prizes refunded.
+/// Emitted when a raffle is cancelled. `prize_refunded` is true only after the
+/// prize tokens have actually been transferred back to the creator.
 #[derive(Clone)]
 #[contractevent]
 pub struct RaffleCancelled {
@@ -285,7 +285,7 @@ pub struct RaffleCancelled {
     pub reason: CancelReason,
     /// Number of tickets sold before cancellation.
     pub tickets_sold: u32,
-    /// Whether the deposited prize was returned to the creator.
+    /// Whether the deposited prize has left escrow and been returned to the creator.
     pub prize_refunded: bool,
     /// Ledger timestamp of the cancellation.
     pub timestamp: u64,

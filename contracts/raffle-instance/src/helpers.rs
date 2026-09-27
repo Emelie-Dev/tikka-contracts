@@ -31,18 +31,14 @@ pub(crate) fn calculate_buy_quote(raffle: &Raffle, quantity: u32) -> Result<BuyQ
     let discount = if raffle.early_bird_ticket_percentage > 0
         && raffle.tickets_sold < raffle.max_tickets * raffle.early_bird_ticket_percentage / 100
     {
-        gross
-            .checked_mul(raffle.early_bird_discount_bp as i128)
+        raffle_shared::apply_bp(gross, raffle.early_bird_discount_bp)
             .ok_or(Error::ArithmeticOverflow)?
-            / 10_000
     } else {
         0
     };
     let net = gross.checked_sub(discount).ok_or(Error::ArithmeticOverflow)?;
-    let fee = net
-        .checked_mul(raffle.protocol_fee_bp as i128)
-        .ok_or(Error::ArithmeticOverflow)?
-        / 10_000;
+    let fee = raffle_shared::apply_bp(net, raffle.protocol_fee_bp)
+        .ok_or(Error::ArithmeticOverflow)?;
     let net_to_pay = net.checked_add(fee).ok_or(Error::ArithmeticOverflow)?;
     let effective_ticket_price = net / quantity as i128;
     Ok(BuyQuote { gross, discount, fee, net_to_pay, effective_ticket_price })
@@ -413,10 +409,8 @@ pub(crate) fn calculate_buy_quote(raffle: &Raffle, quantity: u32) -> Result<BuyQ
             .ok_or(Error::ArithmeticOverflow)?
             / 100;
         if (raffle.tickets_sold as u64) < threshold {
-            gross
-                .checked_mul(raffle.early_bird_discount_bp as i128)
+            raffle_shared::apply_bp(gross, raffle.early_bird_discount_bp)
                 .ok_or(Error::ArithmeticOverflow)?
-                / 10000
         } else {
             0
         }
@@ -428,10 +422,8 @@ pub(crate) fn calculate_buy_quote(raffle: &Raffle, quantity: u32) -> Result<BuyQ
         .checked_sub(discount)
         .ok_or(Error::ArithmeticOverflow)?;
 
-    let fee = net_to_pay
-        .checked_mul(raffle.protocol_fee_bp as i128)
-        .ok_or(Error::ArithmeticOverflow)?
-        / 10000;
+    let fee = raffle_shared::apply_bp(net_to_pay, raffle.protocol_fee_bp)
+        .ok_or(Error::ArithmeticOverflow)?;
 
     let effective_ticket_price = net_to_pay / (quantity as i128);
 
@@ -470,9 +462,7 @@ pub(crate) fn calculate_tier_prize(raffle: &Raffle, tier_index: u32) -> Result<i
         let mut allocated = 0i128;
         for i in 0..last_tier_index {
             let bp = raffle.prizes.get(i).ok_or(Error::InvalidIndex)?;
-            let amt = raffle
-                .prize_amount
-                .checked_mul(bp as i128)
+            let amt = raffle_shared::apply_bp(raffle.prize_amount, bp)
                 .ok_or(Error::ArithmeticOverflow)?
                 .checked_add(allocated)
                 .ok_or(Error::ArithmeticOverflow)?;
@@ -486,18 +476,12 @@ pub(crate) fn calculate_tier_prize(raffle: &Raffle, tier_index: u32) -> Result<i
             .ok_or(Error::ArithmeticOverflow)
     } else {
         let bp = raffle.prizes.get(tier_index).ok_or(Error::InvalidIndex)?;
-        raffle
-            .prize_amount
-            .checked_mul(bp as i128)
+        raffle_shared::apply_bp(raffle.prize_amount, bp)
             .ok_or(Error::ArithmeticOverflow)
-            .map(|a| a / 10000)
     }
     let bp = raffle.prizes.get(tier_index).ok_or(Error::InvalidIndex)?;
-    raffle
-        .prize_amount
-        .checked_mul(bp as i128)
+    raffle_shared::apply_bp(raffle.prize_amount, bp)
         .ok_or(Error::ArithmeticOverflow)
-        .map(|a| a / 10000)
 }
         fix/bump-raffle-ttl-746
 
@@ -737,10 +721,8 @@ pub(crate) fn calculate_buy_quote(raffle: &Raffle, quantity: u32) -> Result<BuyQ
         let sold = raffle.tickets_sold as u64;
         if sold < eb_cap {
             let remaining = (eb_cap - sold).min(quantity as u64) as i128;
-            let disc_per = unit
-                .checked_mul(raffle.early_bird_discount_bp as i128)
-                .ok_or(Error::ArithmeticOverflow)?
-                / 10_000;
+            let disc_per = raffle_shared::apply_bp(unit, raffle.early_bird_discount_bp)
+                .ok_or(Error::ArithmeticOverflow)?;
             discount = disc_per
                 .checked_mul(remaining)
                 .ok_or(Error::ArithmeticOverflow)?;
@@ -752,10 +734,8 @@ pub(crate) fn calculate_buy_quote(raffle: &Raffle, quantity: u32) -> Result<BuyQ
         .ok_or(Error::ArithmeticOverflow)?;
 
     // Floor fee — match current buy_tickets style (fee = total * bp / 10000)
-    let fee = after_discount
-        .checked_mul(raffle.protocol_fee_bp as i128)
-        .ok_or(Error::ArithmeticOverflow)?
-        / 10_000;
+    let fee = raffle_shared::apply_bp(after_discount, raffle.protocol_fee_bp)
+        .ok_or(Error::ArithmeticOverflow)?;
 
     let effective_ticket_price = after_discount
         .checked_div(quantity as i128)
@@ -920,10 +900,7 @@ fn ticket_payment_amount(raffle: &Raffle, ticket_id: u32) -> i128 {
         return raffle.ticket_price;
     }
 
-    let discount = raffle
-        .ticket_price
-        .checked_mul(raffle.early_bird_discount_bp as i128)
-        .and_then(|value| value.checked_div(10_000))
+    let discount = raffle_shared::apply_bp(raffle.ticket_price, raffle.early_bird_discount_bp)
         .expect("solvency invariant overflow while calculating early-bird discount");
     raffle
         .ticket_price
@@ -1020,11 +997,12 @@ pub(crate) fn calculate_buy_quote(
     let early_bird_quantity = u32::min(quantity, early_bird_remaining);
     let regular_quantity = quantity - early_bird_quantity;
 
+    let discount = raffle_shared::apply_bp(raffle.ticket_price, raffle.early_bird_discount_bp)
+        .ok_or(Error::ArithmeticOverflow)?;
     let discounted_price = raffle
         .ticket_price
-        .checked_mul((10000 - raffle.early_bird_discount_bp) as i128)
-        .ok_or(Error::ArithmeticOverflow)?
-        / 10000;
+        .checked_sub(discount)
+        .ok_or(Error::ArithmeticOverflow)?;
 
     let early_bird_cost = (early_bird_quantity as i128)
         .checked_mul(discounted_price)
@@ -1036,10 +1014,8 @@ pub(crate) fn calculate_buy_quote(
         .checked_add(regular_cost)
         .ok_or(Error::ArithmeticOverflow)?;
 
-    let protocol_fee = total_price
-        .checked_mul(raffle.protocol_fee_bp as i128)
-        .ok_or(Error::ArithmeticOverflow)?
-        / 10000;
+    let protocol_fee = raffle_shared::apply_bp(total_price, raffle.protocol_fee_bp)
+        .ok_or(Error::ArithmeticOverflow)?;
 
     let effective_ticket_price = total_price
         .checked_div(quantity as i128)

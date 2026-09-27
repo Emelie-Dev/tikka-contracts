@@ -42,10 +42,17 @@ rust_toolchain_channel() {
 
 load_env() {
   if [[ -f "${REPO_ROOT}/.env" ]]; then
+    local restore_xtrace=0
+    case "$-" in
+      *x*) restore_xtrace=1; set +x ;;
+    esac
     set -a
     # shellcheck disable=SC1091
     source "${REPO_ROOT}/.env"
     set +a
+    if [[ "${restore_xtrace}" == "1" ]]; then
+      set -x
+    fi
   fi
 }
 
@@ -55,6 +62,48 @@ require_env() {
   if [[ -z "${!name:-}" ]]; then
     echo "Error: ${name} is required${detail:+ (${detail})}" >&2
     exit 1
+  fi
+}
+
+require_identity() {
+  local restore_xtrace=0
+
+  case "$-" in
+    *x*) restore_xtrace=1; set +x ;;
+  esac
+  local identity="$1"
+  local secret_key="${DEPLOYER_SECRET_KEY:-}"
+  export -n secret_key
+  unset DEPLOYER_SECRET_KEY
+
+  require_cmd stellar
+  if stellar keys address "${identity}" >/dev/null 2>&1; then
+    unset secret_key
+    if [[ "${restore_xtrace}" == "1" ]]; then
+      set -x
+    fi
+    return
+  fi
+
+  if [[ -z "${secret_key}" ]]; then
+    echo "Error: DEPLOYER_SECRET_KEY is required to configure the ${identity} identity" >&2
+    if [[ "${restore_xtrace}" == "1" ]]; then
+      set -x
+    fi
+    return 1
+  fi
+
+  if ! printf '%s\n' "${secret_key}" |
+    env -u DEPLOYER_SECRET_KEY stellar keys add "${identity}" --secret-key >/dev/null; then
+    unset secret_key
+    if [[ "${restore_xtrace}" == "1" ]]; then
+      set -x
+    fi
+    return 1
+  fi
+  unset secret_key
+  if [[ "${restore_xtrace}" == "1" ]]; then
+    set -x
   fi
 }
 

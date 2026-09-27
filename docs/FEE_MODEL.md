@@ -1,18 +1,19 @@
 # Tikka Protocol Fee Model
 
-Protocol fees are charged at two points: ticket purchase and prize claim. Each
-site uses a single rounding rule, always in the protocol's favour.
+Protocol fees are charged at ticket purchase and prize claim. Basis-point
+amounts use floor division consistently at both sites.
 
 ## Rounding Rules
 
 | Site | Formula | Rounding |
 |------|---------|----------|
 | Ticket purchase | `total_price × protocol_fee_bp / 10_000` | Floor |
-| Prize claim | `(tier_amount × protocol_fee_bp + 9_999) / 10_000` | Ceiling |
+| Prize claim | `tier_amount × protocol_fee_bp / 10_000` | Floor |
 
-Fees are transferred to the treasury address at collection time. The
-`AccumulatedFees` ledger tracks the same amounts for admin `withdraw_fees`
-accounting — the total protocol take must equal the documented rate, not more.
+Ticket-purchase fees are held in the contract and recorded in `AccumulatedFees`
+until an admin withdraws them after finalization. Prize-claim fees are
+transferred directly to the treasury and are not added to `AccumulatedFees`.
+Each fee is therefore paid out exactly once.
 
 ## Tier Prize Allocation
 
@@ -35,11 +36,11 @@ Per ticket: `100_000_000 × 250 / 10_000 = 2_500_000` stroops (2.5 XLM)
 
 Total ticket fees: `10 × 2_500_000 = 25_000_000` stroops (25 XLM)
 
-### Prize claim fee (ceiling)
+### Prize claim fee (floor)
 
 Single tier gross: `800_000_000` stroops
 
-Claim fee: `(800_000_000 × 250 + 9_999) / 10_000 = 20_000_000` stroops (20 XLM)
+Claim fee: `800_000_000 × 250 / 10_000 = 20_000_000` stroops (20 XLM)
 
 Winner receives: `800_000_000 − 20_000_000 = 780_000_000` stroops (780 XLM)
 
@@ -61,14 +62,15 @@ asserts the treasury balance increases by exactly 45 XLM — no double-count via
 ### 1. At Ticket Purchase
 
 - **Formula:** `total_price × protocol_fee_bp / 10_000` (floor division)
-- **Recipient:** Treasury address
+- **Recipient:** Accrued in the contract; later paid to the recipient selected by the admin
 - **Payer:** Ticket buyer
 
 ### 2. At Prize Claim
 
-- **Formula:** `(prize_tier_amount × protocol_fee_bp + 9_999) / 10_000` (ceiling division)
+- **Formula:** `prize_tier_amount × protocol_fee_bp / 10_000` (floor division)
 - **Recipient:** Treasury address
 - **Payer:** Prize winner (deducted from payout)
+- **Accounting:** Transferred immediately; not included in `AccumulatedFees`
 
 ## Zero Fee Rate
 
