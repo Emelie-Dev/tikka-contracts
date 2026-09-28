@@ -10,6 +10,9 @@ export interface OracleConfig {
   logLevel: string;
   pollIntervalMs: number;
   healthPort: number;
+  metricsPort: number;
+  metricsBindAddress: string;
+  metricsAuthToken: string;
   alertWebhookUrl: string;
   alertFailureThreshold: number;
   alertRateLimitMs: number;
@@ -87,11 +90,24 @@ export function loadAndValidateConfig(): OracleConfig {
 
   const alertWebhookUrl = process.env['ALERT_WEBHOOK_URL'] ?? '';
   const healthPort = readPositiveInt('HEALTH_PORT', 9090, errors);
+  const metricsPort = readPositiveInt('METRICS_PORT', 9091, errors);
+  if (metricsPort === healthPort) {
+    errors.push('METRICS_PORT must differ from HEALTH_PORT');
+  }
+  const metricsBindAddress = process.env['METRICS_BIND_ADDRESS']?.trim() || '127.0.0.1';
+  const metricsAuthToken = process.env['METRICS_AUTH_TOKEN']?.trim() ?? '';
+  if (!metricsAuthToken && metricsBindAddress !== '127.0.0.1' && metricsBindAddress !== '::1') {
+    errors.push('METRICS_AUTH_TOKEN is required when METRICS_BIND_ADDRESS is not loopback');
+  }
   const alertFailureThreshold = readPositiveInt('ALERT_FAILURE_THRESHOLD', 3, errors);
   const alertRateLimitMs = readPositiveInt('ALERT_RATE_LIMIT_MS', 60_000, errors);
   const alertQueueDepthLimit = readPositiveInt('ALERT_QUEUE_DEPTH_LIMIT', 10, errors);
   const alertQueueAgeLimitMs = readPositiveInt('ALERT_QUEUE_AGE_LIMIT_MS', 300_000, errors);
-  const alertRpcUnreachableThreshold = readPositiveInt('ALERT_RPC_UNREACHABLE_THRESHOLD', 3, errors);
+  const alertRpcUnreachableThreshold = readPositiveInt(
+    'ALERT_RPC_UNREACHABLE_THRESHOLD',
+    3,
+    errors
+  );
   const retryPolicy: RetryPolicyOptions = {
     baseMs: readPositiveInt('ORACLE_RETRY_BASE_MS', 500, errors),
     maxMs: readPositiveInt('ORACLE_RETRY_MAX_MS', 30_000, errors),
@@ -122,6 +138,9 @@ export function loadAndValidateConfig(): OracleConfig {
     logLevel: process.env['LOG_LEVEL'] ?? 'info',
     pollIntervalMs,
     healthPort,
+    metricsPort,
+    metricsBindAddress,
+    metricsAuthToken,
     alertWebhookUrl,
     alertFailureThreshold,
     alertRateLimitMs,

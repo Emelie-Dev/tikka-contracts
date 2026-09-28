@@ -29,6 +29,9 @@ describe('loadAndValidateConfig', () => {
     delete process.env['ALERT_QUEUE_DEPTH_LIMIT'];
     delete process.env['ALERT_QUEUE_AGE_LIMIT_MS'];
     delete process.env['ALERT_RPC_UNREACHABLE_THRESHOLD'];
+    delete process.env['METRICS_PORT'];
+    delete process.env['METRICS_BIND_ADDRESS'];
+    delete process.env['METRICS_AUTH_TOKEN'];
     delete process.env['ORACLE_RETRY_BASE_MS'];
     delete process.env['ORACLE_RETRY_MAX_MS'];
     delete process.env['ORACLE_RETRY_MAX_ATTEMPTS'];
@@ -54,7 +57,8 @@ describe('loadAndValidateConfig', () => {
   it('returns validated config when env is valid', () => {
     process.env['ORACLE_SECRET_KEY'] = Keypair.random().secret();
     process.env['STELLAR_RPC_URL'] = 'https://soroban-testnet.stellar.org';
-    process.env['FACTORY_CONTRACT_ID'] = 'CAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAHK3M';
+    process.env['FACTORY_CONTRACT_ID'] =
+      'CAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAHK3M';
     process.env['POLL_INTERVAL_MS'] = '7000';
     process.env['LOG_LEVEL'] = 'debug';
 
@@ -69,7 +73,8 @@ describe('loadAndValidateConfig', () => {
   it('defaults alert config when ALERT_* variables are unset', () => {
     process.env['ORACLE_SECRET_KEY'] = Keypair.random().secret();
     process.env['STELLAR_RPC_URL'] = 'https://soroban-testnet.stellar.org';
-    process.env['FACTORY_CONTRACT_ID'] = 'CAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAHK3M';
+    process.env['FACTORY_CONTRACT_ID'] =
+      'CAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAHK3M';
 
     const config = loadAndValidateConfig();
 
@@ -79,13 +84,42 @@ describe('loadAndValidateConfig', () => {
     expect(config.alertQueueDepthLimit).toBe(10);
     expect(config.alertQueueAgeLimitMs).toBe(300_000);
     expect(config.alertRpcUnreachableThreshold).toBe(3);
+    expect(config.metricsPort).toBe(9091);
+    expect(config.metricsBindAddress).toBe('127.0.0.1');
+    expect(config.metricsAuthToken).toBe('');
     expect(config.retryPolicy).toEqual({ baseMs: 500, maxMs: 30000, maxAttempts: 5 });
+  });
+
+  it('requires a token when metrics bind outside loopback', () => {
+    process.env['ORACLE_SECRET_KEY'] = Keypair.random().secret();
+    process.env['STELLAR_RPC_URL'] = 'https://soroban-testnet.stellar.org';
+    process.env['FACTORY_CONTRACT_ID'] =
+      'CAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAHK3M';
+    process.env['METRICS_BIND_ADDRESS'] = '0.0.0.0';
+
+    expect(() => loadAndValidateConfig()).toThrow('process.exit:1');
+    expect(logger.error).toHaveBeenCalledWith(
+      ' - METRICS_AUTH_TOKEN is required when METRICS_BIND_ADDRESS is not loopback'
+    );
+  });
+
+  it('requires the health and metrics listeners to use different ports', () => {
+    process.env['ORACLE_SECRET_KEY'] = Keypair.random().secret();
+    process.env['STELLAR_RPC_URL'] = 'https://soroban-testnet.stellar.org';
+    process.env['FACTORY_CONTRACT_ID'] =
+      'CAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAHK3M';
+    process.env['HEALTH_PORT'] = '9091';
+    process.env['METRICS_PORT'] = '9091';
+
+    expect(() => loadAndValidateConfig()).toThrow('process.exit:1');
+    expect(logger.error).toHaveBeenCalledWith(' - METRICS_PORT must differ from HEALTH_PORT');
   });
 
   it('reads retry policy config from env', () => {
     process.env['ORACLE_SECRET_KEY'] = Keypair.random().secret();
     process.env['STELLAR_RPC_URL'] = 'https://soroban-testnet.stellar.org';
-    process.env['FACTORY_CONTRACT_ID'] = 'CAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAHK3M';
+    process.env['FACTORY_CONTRACT_ID'] =
+      'CAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAHK3M';
     process.env['ORACLE_RETRY_BASE_MS'] = '250';
     process.env['ORACLE_RETRY_MAX_MS'] = '15000';
     process.env['ORACLE_RETRY_MAX_ATTEMPTS'] = '2';
@@ -98,7 +132,8 @@ describe('loadAndValidateConfig', () => {
   it('reads ALERT_* config from env', () => {
     process.env['ORACLE_SECRET_KEY'] = Keypair.random().secret();
     process.env['STELLAR_RPC_URL'] = 'https://soroban-testnet.stellar.org';
-    process.env['FACTORY_CONTRACT_ID'] = 'CAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAHK3M';
+    process.env['FACTORY_CONTRACT_ID'] =
+      'CAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAHK3M';
     process.env['ALERT_WEBHOOK_URL'] = 'https://hooks.example.com/alert';
     process.env['ALERT_FAILURE_THRESHOLD'] = '5';
     process.env['ALERT_RATE_LIMIT_MS'] = '30000';
@@ -119,7 +154,8 @@ describe('loadAndValidateConfig', () => {
   it('exits with code 1 when an ALERT_* value is not a positive number', () => {
     process.env['ORACLE_SECRET_KEY'] = Keypair.random().secret();
     process.env['STELLAR_RPC_URL'] = 'https://soroban-testnet.stellar.org';
-    process.env['FACTORY_CONTRACT_ID'] = 'CAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAHK3M';
+    process.env['FACTORY_CONTRACT_ID'] =
+      'CAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAHK3M';
     process.env['ALERT_RATE_LIMIT_MS'] = 'not-a-number';
 
     expect(() => loadAndValidateConfig()).toThrow('process.exit:1');

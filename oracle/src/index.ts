@@ -16,7 +16,12 @@ async function main(): Promise<void> {
     rateLimitMs: config.alertRateLimitMs,
   });
 
-  const healthServer = startHealthServer({ port: config.healthPort });
+  const healthServers = startHealthServer({
+    port: config.healthPort,
+    metricsPort: config.metricsPort,
+    metricsBindAddress: config.metricsBindAddress,
+    metricsAuthToken: config.metricsAuthToken,
+  });
 
   if (!alerter.enabled) {
     logger.warn('ALERT_WEBHOOK_URL is not set; operational alerts are disabled.');
@@ -33,7 +38,8 @@ async function main(): Promise<void> {
 
   const shutdown = (): void => {
     void pipeline.shutdown().finally(() => {
-      healthServer.close();
+      healthServers.health.close();
+      healthServers.metrics.close();
     });
   };
 
@@ -51,6 +57,8 @@ async function main(): Promise<void> {
 }
 
 main().catch((error: unknown) => {
-  logger.error(`Oracle service failed to start: ${error instanceof Error ? error.message : String(error)}`);
+  logger.error(
+    `Oracle service failed to start: ${error instanceof Error ? error.message : String(error)}`
+  );
   process.exit(1);
 });
