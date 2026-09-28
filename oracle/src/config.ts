@@ -78,6 +78,13 @@ export function loadAndValidateConfig(): OracleConfig {
     errors.push('FACTORY_CONTRACT_ID is required');
   }
 
+  const oracleSecretKey = process.env['ORACLE_SECRET_KEY'];
+  if (!oracleSecretKey) {
+    errors.push('ORACLE_SECRET_KEY is required');
+  } else if (!isValidSecretKey(oracleSecretKey)) {
+    errors.push('ORACLE_SECRET_KEY must be a valid Ed25519 secret key (S... format or 32-byte hex/base64)');
+  }
+
   const rawPollInterval =
     process.env['POLL_INTERVAL_MS'] ?? process.env['ORACLE_POLL_INTERVAL_MS'] ?? '5000';
   const pollIntervalMs = Number(rawPollInterval);
@@ -107,7 +114,7 @@ export function loadAndValidateConfig(): OracleConfig {
     process.exit(1);
   }
 
-  // At this point errors.length === 0, so rpcUrl and factoryContractId are defined.
+  // At this point errors.length === 0, so rpcUrl, factoryContractId, and oracleSecretKey are defined and valid.
   // The non-null assertions below are replaced by explicit narrowing guards above
   // (process.exit(1) means we never reach here with undefined values).
 
