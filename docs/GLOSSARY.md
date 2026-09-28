@@ -6,7 +6,7 @@ This document defines key terms used throughout Tikka contracts, documentation, 
 
 ### RaffleStatus
 
-The lifecycle state of a raffle instance. Transitions are enforced by contract logic and represent the canonical on-chain lifecycle used by indexers and clients. Possible states are: `PendingPrize` (prize not yet deposited), `Active` (ticket sales open), `Drawing` (randomness pending), `Finalized` (winners selected), `Cancelled`, `Failed`, or `Claimed` (all winners have collected).
+The lifecycle state of a raffle instance. Transitions are enforced by contract logic and represent the canonical on-chain lifecycle used by indexers and clients. Possible states are: `PendingPrize` (prize not yet deposited), `Active` (ticket sales open), `Drawing` (randomness pending), `Finalized` (winners selected and claims or sweeps may still be pending), `Cancelled`, `Failed`, or `Claimed` (all winners have collected their prizes).
 
 **Canonical transition graph** (defined in code via `RaffleStatus::can_transition_to`):
 
@@ -19,7 +19,7 @@ stateDiagram-v2
     Active --> Cancelled: cancel_raffle()
     Drawing --> Finalized: randomness delivered / internal finalize
     Drawing --> Cancelled: oracle timeout refund
-    Finalized --> Claimed: all prizes claimed or swept
+    Finalized --> Claimed: all prizes claimed by winners
     Cancelled --> [*]
     Failed --> [*]
     Claimed --> [*]
@@ -60,6 +60,14 @@ A single entry in a raffle draw owned by a participant. Each ticket represents o
 The amount (denominated in a Stellar asset) awarded to the winner(s) of a raffle. The creator escrows the prize in the contract at raffle creation. Winners claim their share after the raffle is finalized and the claim lockup period expires.
 
 **Code reference**: [`contracts/raffle-instance/src/lib.rs`](../contracts/raffle-instance/src/lib.rs) — `deposit_prize()` entry point
+
+### Claimed and Swept Prizes
+
+A **claimed** prize is transferred to its winner through `claim_prize`. A
+**swept** prize was not claimed before expiry and is instead transferred to the
+treasury through `sweep_unclaimed`. Winner records expose these as separate
+states; `get_stats` reports `claimed_prizes` and `swept_prizes` independently.
+A swept winner cannot claim the prize and receives `Error::PrizeSwept`.
 
 ## Randomness & Drawing
 

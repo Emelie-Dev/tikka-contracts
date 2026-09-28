@@ -128,6 +128,17 @@ pub(crate) fn get_stats(env: Env) -> Result<RaffleStats, Error> {
         .checked_mul(raffle.ticket_price)
         .ok_or(Error::ArithmeticOverflow)?;
 
+    let mut claimed_prizes = 0;
+    let mut swept_prizes = 0;
+    for winner in raffle.winners.iter() {
+        if winner.claimed {
+            claimed_prizes += 1;
+        }
+        if winner.swept {
+            swept_prizes += 1;
+        }
+    }
+
     Ok(RaffleStats {
         tickets_sold: raffle.tickets_sold,
         unique_buyers: buyers.len(),
@@ -136,6 +147,8 @@ pub(crate) fn get_stats(env: Env) -> Result<RaffleStats, Error> {
         prize_funded: raffle.prize_deposited,
         status: raffle.status,
         time_remaining,
+        claimed_prizes,
+        swept_prizes,
     })
 }
 

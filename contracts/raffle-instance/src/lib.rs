@@ -126,6 +126,7 @@ pub struct Raffle {
 pub struct Winner {
     pub address: Address,
     pub claimed: bool,
+    pub swept: bool,
 }
 
 #[contracttype]
@@ -238,6 +239,7 @@ pub enum Error {
     /// The Ed25519 public key submitted to `provide_randomness` does not match
     /// the key registered for this raffle's oracle (#985).
     OraclePublicKeyMismatch = 71,
+    PrizeSwept = 72,
 }
 
 /// Returns the effective per-address ticket cap, if any.

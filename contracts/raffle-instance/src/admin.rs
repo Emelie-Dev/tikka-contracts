@@ -39,7 +39,7 @@ fn outstanding_prize(_env: &Env, raffle: &crate::Raffle) -> Result<i128, Error> 
         if !raffle
             .winners
             .get(tier_index)
-            .map(|winner| winner.claimed)
+            .map(|winner| winner.claimed || winner.swept)
             .unwrap_or(false)
         {
             outstanding = outstanding

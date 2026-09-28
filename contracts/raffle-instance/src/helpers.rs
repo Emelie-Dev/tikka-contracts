@@ -528,6 +528,7 @@ pub(crate) fn do_finalize_with_seed(
         winner_records.push_back(crate::Winner {
             address: owner.clone(),
             claimed: false,
+            swept: false,
         });
         winning_ticket_ids_1indexed.push_back(idx + 1);
         WinnerDrawn {
