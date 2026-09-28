@@ -4,9 +4,10 @@ use raffle_shared::CancelReason;
 use raffle_shared::constants::TIMELOCK_DELAY_SECONDS;
 
 use crate::events::{
-    CancelScheduled, ContractPaused, ContractUnpaused, DustSwept, EmergencyWithdrawn, FeesWithdrawn,
-    MetadataHashUpdated, OracleAddressUpdated, ProtocolFeeUpdated, RaffleCancelled, StorageWiped,
-    SwapDeadlineUpdated, TicketSalesPaused, TicketSalesResumed, TokensRescued,
+    AdminChanged, CancelScheduled, ContractPaused, ContractUnpaused, DustSwept,
+    EmergencyWithdrawn, FeesWithdrawn, MetadataHashUpdated, OracleAddressUpdated,
+    ProtocolFeeUpdated, RaffleCancelled, StorageWiped, SwapDeadlineUpdated, TicketSalesPaused,
+    TicketSalesResumed, TokensRescued,
 };
 use crate::{
     calculate_tier_prize, read_raffle, require_admin, write_raffle, DataKey, Error, RaffleStatus,
@@ -76,16 +77,49 @@ fn token_entitlement(env: &Env, raffle: &crate::Raffle, token: &Address) -> Resu
     Ok(entitlement)
 }
 
-#[allow(dead_code)]
-pub(crate) fn set_admin(env: Env, new_admin: Address) -> Result<(), Error> {
-    let _old = require_admin(&env)?;
+pub(crate) fn transfer_admin(env: Env, new_admin: Address) -> Result<(), Error> {
+    let current_admin = require_admin(&env)?;
     if !new_admin.exists() || new_admin == env.current_contract_address() {
         return Err(Error::InvalidAdminAddress);
     }
-    // `init` and `require_admin` read/write DataKey::Admin from instance storage;
-    // keep the rotated admin on the same tier or every admin entrypoint bricks
-    // after a rotation (#751).
+
+    if new_admin == current_admin {
+        env.storage().instance().remove(&DataKey::PendingAdmin);
+        return Ok(());
+    }
+    if env.storage().instance().has(&DataKey::PendingAdmin) {
+        return Err(Error::AdminTransferPending);
+    }
+
+    env.storage()
+        .instance()
+        .set(&DataKey::PendingAdmin, &new_admin);
+    Ok(())
+}
+
+pub(crate) fn accept_admin(env: Env) -> Result<(), Error> {
+    let new_admin: Address = env
+        .storage()
+        .instance()
+        .get(&DataKey::PendingAdmin)
+        .ok_or(Error::NoPendingTransfer)?;
+    new_admin.require_auth();
+
+    let old_admin: Address = env
+        .storage()
+        .instance()
+        .get(&DataKey::Admin)
+        .ok_or(Error::NotAuthorized)?;
     env.storage().instance().set(&DataKey::Admin, &new_admin);
+    env.storage().instance().remove(&DataKey::PendingAdmin);
+
+    AdminChanged {
+        old_admin,
+        new_admin: new_admin.clone(),
+        changed_by: new_admin,
+        timestamp: env.ledger().timestamp(),
+    }
+    .publish(&env);
     Ok(())
 }
 
@@ -598,6 +632,7 @@ pub(crate) fn wipe_storage(env: Env) -> Result<(), Error> {
     env.storage().instance().remove(&DataKey::DrawingLock);
     env.storage().instance().remove(&DataKey::FinishTime);
     env.storage().instance().remove(&DataKey::PendingAdminCancel);
+    env.storage().instance().remove(&DataKey::PendingAdmin);
 
     let submitted_oracles: soroban_sdk::Vec<Address> = env
         .storage()

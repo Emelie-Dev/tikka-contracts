@@ -34,6 +34,22 @@ graph TB
 1. The oracle service polls those events and calls `provide_randomness` back on the instance (see [ORACLE.md](ORACLE.md) for pipeline details).
 1. The instance finalizes winners, emits finalization events, and winners claim prizes.
 
+## Administrative Control
+
+Both the factory and each raffle instance use a two-step admin transfer. The
+current admin calls `transfer_factory_admin` on the factory or `transfer_admin`
+on an instance to nominate an address. The nominated address must call
+`accept_factory_admin` or `accept_admin` respectively; an instance emits
+`AdminChanged` only after acceptance. The current admin can cancel a pending
+transfer by nominating itself again.
+
+To synchronize instances during a factory admin rotation, the current factory
+admin first calls `transfer_factory_admin(new_admin)`, then calls `sync_admin`
+for every instance while the factory transfer is still pending. Each instance
+records the proposed factory admin as its pending admin. The new admin accepts
+each instance transfer and then calls `accept_factory_admin` on the factory.
+This preserves explicit consent at both contract levels.
+
 ## RaffleStatus State Machine
 
 ```mermaid
@@ -64,7 +80,7 @@ The instance has four intended token-moving paths:
 
 - `claim_prize` pays each unclaimed winner and records protocol fees.
 - `sweep_unclaimed` pays unclaimed prizes to the treasury after the claim
-    expiry period and marks those prizes claimed.
+  expiry period and marks those prizes claimed.
 - `refund_prize` returns the deposited prize after `Cancelled` or `Failed`.
 - `refund_ticket` returns each ticket payment after `Cancelled` or `Failed`.
 - `withdraw_fees` pays only recorded accumulated fees after finalization.
@@ -72,14 +88,14 @@ The instance has four intended token-moving paths:
 Administrative escape paths are constrained by the same invariant:
 
 - `emergency_withdraw` is only available for a timed-out `Drawing` raffle.
-    Its delay starts at `end_time`, or at the randomness request ledger for a
-    no-deadline raffle. It transfers only the deposited prize token and leaves
-    all remaining obligations covered.
+  Its delay starts at `end_time`, or at the randomness request ledger for a
+  no-deadline raffle. It transfers only the deposited prize token and leaves
+  all remaining obligations covered.
 - `rescue_tokens` can transfer unrelated-token surplus, but for either
-    configured raffle token it must leave unpaid ticket refunds, accumulated
-    fees, and outstanding prize claims fully covered.
+  configured raffle token it must leave unpaid ticket refunds, accumulated
+  fees, and outstanding prize claims fully covered.
 - `sweep_dust` is available only after settlement and transfers payment-token
-    surplus above all remaining entitlements; accumulated fees are preserved.
+  surplus above all remaining entitlements; accumulated fees are preserved.
 
 Escrow solvency is a protocol guarantee. After every successful state-changing
 entrypoint, configured-token balances must cover all stored entitlements:
@@ -102,15 +118,15 @@ unclaimed winners remain entitled to their prizes.
 
 The following table summarizes the behavior of mutating contract entrypoints across all 7 `RaffleStatus` states (#623):
 
-| Mutating Entrypoint | PendingPrize | Active | Drawing | Finalized | Cancelled | Failed | Claimed |
-|---|---|---|---|---|---|---|---|
-| `deposit_prize` | **Allowed** (-> Active) | Rejected (`PrizeAlreadyDeposited`) | Rejected (`PrizeAlreadyDeposited`) | Rejected (`PrizeAlreadyDeposited`) | Rejected (`PrizeAlreadyDeposited`) | Rejected (`PrizeAlreadyDeposited`) | Rejected (`PrizeAlreadyDeposited`) |
-| `buy_tickets` | Rejected (`RaffleInactive`) | **Allowed** (-> Active / Drawing) | Rejected (`DrawingAlreadyInProgress` / `RaffleInactive`) | Rejected (`RaffleInactive`) | Rejected (`RaffleInactive`) | Rejected (`RaffleInactive`) | Rejected (`RaffleInactive`) |
-| `finalize_raffle` | Rejected (`InvalidStateTransition`) | **Allowed** (if ended/full) | **Allowed** (if Drawing) | Rejected (`InvalidStatus`) | Rejected (`InvalidStatus`) | Rejected (`InvalidStatus`) | Rejected (`InvalidStatus`) |
-| `provide_randomness` | Rejected (`InvalidStatus`) | Rejected (`InvalidStatus`) | **Allowed** (-> Finalized) | Rejected (`InvalidStatus`) | Rejected (`InvalidStatus`) | Rejected (`InvalidStatus`) | Rejected (`InvalidStatus`) |
-| `claim_prize` | Rejected (`InvalidStatus`) | Rejected (`InvalidStatus`) | Rejected (`InvalidStatus`) | **Allowed** (-> Finalized / Claimed) | Rejected (`InvalidStatus`) | Rejected (`InvalidStatus`) | Rejected (`InvalidStatus`) |
-| `cancel_raffle` | **Allowed** (-> Cancelled) | **Allowed** (-> Cancelled) | **Allowed** (-> Cancelled) | Rejected (`InvalidStatus`) | Rejected (`InvalidStatus`) | **Allowed** (-> Cancelled) | Rejected (`InvalidStatus`) |
-| `refund_ticket` | Rejected (`InvalidStatus`) | Rejected (`InvalidStatus`) | Rejected (`InvalidStatus`) | Rejected (`InvalidStatus`) | **Allowed** | **Allowed** | Rejected (`InvalidStatus`) |
+| Mutating Entrypoint  | PendingPrize                        | Active                             | Drawing                                                  | Finalized                            | Cancelled                          | Failed                             | Claimed                            |
+| -------------------- | ----------------------------------- | ---------------------------------- | -------------------------------------------------------- | ------------------------------------ | ---------------------------------- | ---------------------------------- | ---------------------------------- |
+| `deposit_prize`      | **Allowed** (-> Active)             | Rejected (`PrizeAlreadyDeposited`) | Rejected (`PrizeAlreadyDeposited`)                       | Rejected (`PrizeAlreadyDeposited`)   | Rejected (`PrizeAlreadyDeposited`) | Rejected (`PrizeAlreadyDeposited`) | Rejected (`PrizeAlreadyDeposited`) |
+| `buy_tickets`        | Rejected (`RaffleInactive`)         | **Allowed** (-> Active / Drawing)  | Rejected (`DrawingAlreadyInProgress` / `RaffleInactive`) | Rejected (`RaffleInactive`)          | Rejected (`RaffleInactive`)        | Rejected (`RaffleInactive`)        | Rejected (`RaffleInactive`)        |
+| `finalize_raffle`    | Rejected (`InvalidStateTransition`) | **Allowed** (if ended/full)        | **Allowed** (if Drawing)                                 | Rejected (`InvalidStatus`)           | Rejected (`InvalidStatus`)         | Rejected (`InvalidStatus`)         | Rejected (`InvalidStatus`)         |
+| `provide_randomness` | Rejected (`InvalidStatus`)          | Rejected (`InvalidStatus`)         | **Allowed** (-> Finalized)                               | Rejected (`InvalidStatus`)           | Rejected (`InvalidStatus`)         | Rejected (`InvalidStatus`)         | Rejected (`InvalidStatus`)         |
+| `claim_prize`        | Rejected (`InvalidStatus`)          | Rejected (`InvalidStatus`)         | Rejected (`InvalidStatus`)                               | **Allowed** (-> Finalized / Claimed) | Rejected (`InvalidStatus`)         | Rejected (`InvalidStatus`)         | Rejected (`InvalidStatus`)         |
+| `cancel_raffle`      | **Allowed** (-> Cancelled)          | **Allowed** (-> Cancelled)         | **Allowed** (-> Cancelled)                               | Rejected (`InvalidStatus`)           | Rejected (`InvalidStatus`)         | **Allowed** (-> Cancelled)         | Rejected (`InvalidStatus`)         |
+| `refund_ticket`      | Rejected (`InvalidStatus`)          | Rejected (`InvalidStatus`)         | Rejected (`InvalidStatus`)                               | Rejected (`InvalidStatus`)           | **Allowed**                        | **Allowed**                        | Rejected (`InvalidStatus`)         |
 
 ## Security: Checks-Effects-Interactions Pattern
 
@@ -118,11 +134,11 @@ All contract entrypoints **MUST** follow this ordering to prevent reentrancy att
 
 ### The Rule
 
-| Step | Phase | Description |
-|------|-------|-------------|
-| 1 | **CHECK** | Validate all inputs, conditions, and permissions |
-| 2 | **EFFECTS** | Perform all state mutations (storage writes) |
-| 3 | **INTERACTIONS** | Make external calls (transfers, factory calls, etc.) |
+| Step | Phase            | Description                                          |
+| ---- | ---------------- | ---------------------------------------------------- |
+| 1    | **CHECK**        | Validate all inputs, conditions, and permissions     |
+| 2    | **EFFECTS**      | Perform all state mutations (storage writes)         |
+| 3    | **INTERACTIONS** | Make external calls (transfers, factory calls, etc.) |
 
 ### Applied to `buy_tickets` and `buy_tickets_for`
 
@@ -190,3 +206,4 @@ Or find that state is already final → no unpaid tickets can be minted
 
 This closes the attack vector described in Issue #763.
 
+```

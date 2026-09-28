@@ -1400,10 +1400,15 @@ impl RaffleFactory {
 
     pub fn sync_admin(env: Env, instance_address: Address) -> Result<(), ContractError> {
         let admin = require_admin(&env)?;
+        let next_admin: Address = env
+            .storage()
+            .persistent()
+            .get(&DataKey::PendingAdmin)
+            .unwrap_or(admin);
         env.invoke_contract::<()>(
             &instance_address,
-            &Symbol::new(&env, "set_admin"),
-            (admin,).into_val(&env),
+            &Symbol::new(&env, "transfer_admin"),
+            (next_admin,).into_val(&env),
         );
         Ok(())
     }

@@ -5,24 +5,16 @@ use soroban_sdk::testutils::Ledger;
 fn test_init_factory() {
     let env = Env::default();
     env.mock_all_auths();
-    
     let admin = Address::generate(&env);
     let treasury = Address::generate(&env);
     let wasm_hash = BytesN::from_array(&env, &[0u8; 32]);
-
     let contract_id = env.register(RaffleFactory, ());
     let client = RaffleFactoryClient::new(&env, &contract_id);
-    
+
     let start_events = env.events().all().len();
     client.init_factory(&admin, &wasm_hash, &0u32, &treasury);
     assert_eq!(env.events().all().len(), start_events + 1);
-
-    assert_event(
-        &env,
-        &client.address,
-        "factory_initialized",
-    );
-
+    assert_event(&env, &client.address, "factory_initialized");
     assert_eq!(client.get_admin(), admin);
 }
 
@@ -57,8 +49,62 @@ fn test_propose_fee_change_rejects_excessive_protocol_fee() {
 }
 
 #[test]
+fn test_sync_admin_stages_instance_transfer_for_factory_pending_admin() {
+    let env = Env::default();
+    env.mock_all_auths();
+    let (client, admin, treasury) = setup_factory(&env);
+    let creator = Address::generate(&env);
+    let instance_address = create_raffles_via_factory(
+        &env,
+        &client,
+        &admin,
+        &treasury,
+        &creator,
+        1,
+    )
+    .get(0)
+    .unwrap();
+    let instance = raffle_instance::RaffleInstanceClient::new(&env, &instance_address);
+    let new_admin = Address::generate(&env);
+
+    client.transfer_factory_admin(&new_admin);
+    client.sync_admin(&instance_address);
+
+    let pending_instance_admin: Option<Address> = env.as_contract(&instance_address, || {
+        env.storage()
+            .instance()
+            .get(&raffle_instance::DataKey::PendingAdmin)
+    });
+    assert_eq!(pending_instance_admin, Some(new_admin.clone()));
+    let instance_admin_before_accept: Address = env.as_contract(&instance_address, || {
+        env.storage()
+            .instance()
+            .get(&raffle_instance::DataKey::Admin)
+            .unwrap()
+    });
+    assert_eq!(instance_admin_before_accept, admin);
+
+    let events_before_accept = env.events().all().len();
+    instance.accept_admin();
+    assert_eq!(env.events().all().len(), events_before_accept + 1);
+    assert_event(&env, &instance_address, "admin_changed");
+
+    let instance_admin: Address = env.as_contract(&instance_address, || {
+        env.storage()
+            .instance()
+            .get(&raffle_instance::DataKey::Admin)
+            .unwrap()
+    });
+    assert_eq!(instance_admin, new_admin);
+
+    client.accept_factory_admin();
+    assert_eq!(client.get_admin(), new_admin);
+}
+
+#[test]
 fn test_init_factory_rejects_second_call() {
     let env = Env::default();
+
     env.mock_all_auths();
     let admin = Address::generate(&env);
     let treasury = Address::generate(&env);

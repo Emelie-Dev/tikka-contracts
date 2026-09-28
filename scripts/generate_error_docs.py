@@ -86,6 +86,9 @@ def parse_protocol_errors():
 
 
 INSTANCE_DESCRIPTIONS: dict[str, str] = {
+    "OraclePublicKeyMismatch": "Submitted oracle key does not match the registered key",
+    "AdminTransferPending": "An admin transfer is already pending",
+    "NoPendingTransfer": "No admin transfer is pending",
     "RaffleNotFound": "The raffle data was not found in storage",
     "RaffleInactive": "The raffle is not in an active state",
     "TicketsSoldOut": "All tickets have been sold",
@@ -144,6 +147,9 @@ INSTANCE_DESCRIPTIONS: dict[str, str] = {
 }
 
 INSTANCE_MESSAGES: dict[str, str] = {
+    "OraclePublicKeyMismatch": "Submitted oracle key does not match the registered key",
+    "AdminTransferPending": "An admin transfer is already pending",
+    "NoPendingTransfer": "No admin transfer is pending",
     "RaffleNotFound": "Raffle not found",
     "RaffleInactive": "This raffle is not currently active",
     "TicketsSoldOut": "Sorry, all tickets have been sold!",

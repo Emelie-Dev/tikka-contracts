@@ -139,6 +139,7 @@ fn test_wipe_storage_removes_all_keys() {
         assert!(!env.storage().instance().has(&DataKey::Raffle));
         assert!(!env.storage().instance().has(&DataKey::Factory));
         assert!(!env.storage().instance().has(&DataKey::Admin));
+        assert!(!env.storage().instance().has(&DataKey::PendingAdmin));
         assert!(!env.storage().instance().has(&DataKey::Paused));
         assert!(!env.storage().instance().has(&DataKey::ReentrancyGuard));
         assert!(!env.storage().instance().has(&DataKey::AccumulatedFees));

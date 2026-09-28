@@ -526,9 +526,7 @@ pub struct EmergencyWithdrawn {
     pub timestamp: u64,
 }
 
-/// Emitted when the raffle admin is changed.  Note: this event is
-/// `#[allow(dead_code)]` in the current implementation.
-#[allow(dead_code)]
+/// Emitted when the proposed raffle admin accepts an admin transfer.
 #[derive(Clone)]
 #[contractevent]
 pub struct AdminChanged {
