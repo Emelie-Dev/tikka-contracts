@@ -444,8 +444,8 @@ pub struct BuyQuote {
 // Re-export constants from the single source of truth
 pub use constants::{
     DEFAULT_CLAIM_EXPIRY_SECONDS, DEFAULT_CLAIM_LOCKUP_SECONDS, DEFAULT_PAGE_LIMIT,
-    DEFAULT_SWAP_DEADLINE_SECONDS, MAX_PAGE_LIMIT, MAX_SWEEP_UNCLAIMED_PER_CALL,
-    MIN_CLAIM_EXPIRY_SECONDS,
+    DEFAULT_SWAP_DEADLINE_SECONDS, MAX_BATCH_REFUND_PER_CALL, MAX_PAGE_LIMIT,
+    MAX_SWEEP_UNCLAIMED_PER_CALL, MIN_CLAIM_EXPIRY_SECONDS,
 };
 
 /// Returns a safe pagination limit clamped to supported bounds.

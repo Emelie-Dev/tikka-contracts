@@ -3,9 +3,9 @@
 //! Baselines are committed in `baselines.json`. Costs above baseline × (1 +
 //! `TOLERANCE_FRACTION`) fail the test.
 
-use raffle_shared::constants::{MAX_PRIZES, MAX_TICKETS_LIMIT};
+use raffle_shared::constants::{MAX_BATCH_REFUND_PER_CALL, MAX_PRIZES, MAX_TICKETS_LIMIT};
 use soroban_sdk::{
-    testutils::budget::Budget,
+    testutils::{budget::Budget, Address as _, Ledger as _},
     token::StellarAssetClient,
     Address, BytesN, Env, String, Vec,
 };
@@ -32,6 +32,10 @@ const SWEEP_UNCLAIMED_MAX_TIERS: Baseline = Baseline {
 const EXTEND_TTL_MAX_TICKETS: Baseline = Baseline {
     cpu_instructions: 40_000_000,
     memory_bytes: 16 * 1024 * 1024,
+};
+const BATCH_REFUND_MAX_BATCH: Baseline = Baseline {
+    cpu_instructions: 30_000_000,
+    memory_bytes: 10 * 1024 * 1024,
 };
 
 #[derive(Clone, Copy)]
@@ -259,4 +263,44 @@ fn extend_ttl_max_tickets_within_baseline() {
         let _ = client.try_extend_ttl();
     });
     assert_within_tolerance("extend_ttl_max_tickets", snap, EXTEND_TTL_MAX_TICKETS);
+}
+
+#[test]
+fn batch_refund_at_cap_within_baseline() {
+    let env = Env::default();
+    env.mock_all_auths();
+
+    let cap = MAX_BATCH_REFUND_PER_CALL;
+    let (client, _, buyer) = setup_raffle(&env, cap, cap, 1);
+    client.buy_tickets(&buyer, &cap);
+    client.cancel_raffle(&raffle_shared::CancelReason::CreatorCancelled);
+
+    let mut ticket_ids = Vec::new(&env);
+    for id in 1..=cap {
+        ticket_ids.push_back(id);
+    }
+
+    let snap = measure(&env, || {
+        let result = client.try_batch_refund_tickets(&buyer, &ticket_ids);
+        assert_eq!(result, Ok(Ok(cap)));
+    });
+    assert_within_tolerance("batch_refund_max_batch", snap, BATCH_REFUND_MAX_BATCH);
+}
+
+#[test]
+fn batch_refund_oversized_batch_rejected() {
+    let env = Env::default();
+    env.mock_all_auths();
+
+    let cap = MAX_BATCH_REFUND_PER_CALL;
+    let (client, _, buyer) = setup_raffle(&env, cap + 1, cap + 1, 1);
+    client.cancel_raffle(&raffle_shared::CancelReason::CreatorCancelled);
+
+    let mut ticket_ids = Vec::new(&env);
+    for id in 1..=(cap + 1) {
+        ticket_ids.push_back(id);
+    }
+
+    let result = client.try_batch_refund_tickets(&buyer, &ticket_ids);
+    assert_eq!(result, Err(Ok(Error::InvalidParameters)));
 }

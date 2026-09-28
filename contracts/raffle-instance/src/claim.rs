@@ -1,4 +1,4 @@
-use raffle_shared::constants::MAX_SWEEP_UNCLAIMED_PER_CALL;
+use raffle_shared::constants::{MAX_BATCH_REFUND_PER_CALL, MAX_SWEEP_UNCLAIMED_PER_CALL};
 use soroban_sdk::{token, Address, Env};
 
 use crate::events::{PrizeClaimed, PrizeRefunded, PrizeSwept, TicketRefunded};
@@ -266,33 +266,55 @@ pub(crate) fn batch_refund_tickets(
     env: Env,
     caller: Address,
     ticket_ids: soroban_sdk::Vec<u32>,
-) -> Result<i128, Error> {
+) -> Result<u32, Error> {
     let raffle = read_raffle(&env)?;
-    if raffle.status != RaffleStatus::Cancelled && raffle.status != RaffleStatus::Failed { return Err(Error::InvalidStatus); }
+    if raffle.status != RaffleStatus::Cancelled && raffle.status != RaffleStatus::Failed {
+        return Err(Error::InvalidStatus);
+    }
+    if ticket_ids.len() > MAX_BATCH_REFUND_PER_CALL {
+        return Err(Error::InvalidParameters);
+    }
 
     let _guard = Guard::new(&env)?;
     caller.require_auth();
-    
+
     let token_client = token::Client::new(&env, &raffle.payment_token);
-    let mut total_refunded: i128 = 0;
+    let mut refunded_count: u32 = 0;
 
     for ticket_id in ticket_ids.iter() {
-        let ticket: crate::Ticket = env.storage().persistent().get(&DataKey::Ticket(ticket_id)).ok_or(Error::TicketNotFound)?;
-        
+        let ticket: crate::Ticket = env
+            .storage()
+            .persistent()
+            .get(&DataKey::Ticket(ticket_id))
+            .ok_or(Error::TicketNotFound)?;
+
         if caller != ticket.payer && caller != ticket.owner {
             return Err(Error::NotAuthorized);
         }
 
         if !env.storage().persistent().has(&DataKey::TicketRefunded(ticket_id)) {
-            env.storage().persistent().set(&DataKey::TicketRefunded(ticket_id), &true);
-            
-            token_client.try_transfer(&env.current_contract_address(), &ticket.owner, &ticket.price_paid).map_err(|_| Error::TokenTransferFailed)?.map_err(|_| Error::TokenTransferFailed)?;
-            
-            TicketRefunded { buyer: ticket.owner, ticket_number: ticket.ticket_number, amount: ticket.price_paid, timestamp: env.ledger().timestamp() }.publish(&env);
-            
-            total_refunded = total_refunded.checked_add(raffle.ticket_price).ok_or(Error::ArithmeticOverflow)?;
+            env.storage()
+                .persistent()
+                .set(&DataKey::TicketRefunded(ticket_id), &true);
+
+            token_client
+                .try_transfer(&env.current_contract_address(), &ticket.owner, &ticket.price_paid)
+                .map_err(|_| Error::TokenTransferFailed)?
+                .map_err(|_| Error::TokenTransferFailed)?;
+
+            TicketRefunded {
+                buyer: ticket.owner,
+                ticket_number: ticket.ticket_number,
+                amount: ticket.price_paid,
+                timestamp: env.ledger().timestamp(),
+            }
+            .publish(&env);
+
+            refunded_count = refunded_count
+                .checked_add(1)
+                .ok_or(Error::ArithmeticOverflow)?;
         }
     }
 
-    Ok(total_refunded)
+    Ok(refunded_count)
 }
