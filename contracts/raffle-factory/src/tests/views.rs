@@ -1,11 +1,11 @@
 //! Edge-case tests for the views module pagination and coverage.
 
-use raffle_shared::{PaginationParams, DEFAULT_PAGE_LIMIT, MAX_PAGE_LIMIT};
-use soroban_sdk::{testutils::Address as _, Address, BytesN, Env};
+// All raffle_shared items (PaginationParams, DEFAULT_PAGE_LIMIT, MAX_PAGE_LIMIT)
+// and soroban_sdk primitives are re-exported by the parent mod.rs.
+// Duplicating those imports here was the source of E0252 (#982).
+use super::*;
 
 use crate::{RaffleFactory, RaffleFactoryClient, RaffleConfig};
-
-use crate::tests::test_raffle_config;
 
 fn setup_with_raffles(env: &Env, count: u32) -> RaffleFactoryClient<'_> {
     let admin = Address::generate(env);

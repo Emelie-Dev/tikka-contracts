@@ -38,4 +38,16 @@ jobs:
           ./actionlint -color .github/workflows/*.yml
       
       - name: Detect orphaned .rs files
-        run: python scripts/check_orphan_modules.py
+        run: python3 scripts/check_orphan_modules.py
+
+      - name: Install ruff
+        run: pip install --quiet ruff
+
+      - name: Ruff lint
+        run: make ruff-lint
+
+      - name: Ruff format check
+        run: make ruff-fmt-check
+
+      - name: Python script tests
+        run: make python-tests

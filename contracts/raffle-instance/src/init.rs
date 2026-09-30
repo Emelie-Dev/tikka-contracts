@@ -145,6 +145,7 @@ pub(crate) fn init(
         claim_expiry_seconds: claim_expiry,
         randomness_source: config.randomness_source.clone(),
         oracle_address: config.oracle_address,
+        oracle_public_key: config.oracle_public_key,
         protocol_fee_bp: config.protocol_fee_bp,
         treasury_address: config.treasury_address,
         swap_router: config.swap_router,

@@ -1,5 +1,5 @@
 import { Keypair } from '@stellar/stellar-sdk';
-import { KeyService } from '../keys/key.service';
+import { EnvSecretsAdapter, KeyService } from '../keys/key.service';
 import { VrfService } from './vrf.service';
 import { buildVrfProofMessage, deriveRandomSeedFromProof } from './proof-message';
 
@@ -8,8 +8,14 @@ describe('buildVrfProofMessage', () => {
     const requestId = 42n;
     const seed = 99n;
 
-    const messageA = buildVrfProofMessage('CAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAABSC4', requestId);
-    const messageB = buildVrfProofMessage('CAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAD2KM', requestId);
+    const messageA = buildVrfProofMessage(
+      'CAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAABSC4',
+      requestId
+    );
+    const messageB = buildVrfProofMessage(
+      'CAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAD2KM',
+      requestId
+    );
 
     expect(messageA.equals(messageB)).toBe(false);
   });
@@ -27,7 +33,7 @@ describe('VrfService', () => {
   });
 
   it('signs and verifies a context-bound randomness proof', async () => {
-    const keyService = new KeyService();
+    const keyService = new KeyService(new EnvSecretsAdapter(process.env));
     await keyService.initialize();
 
     const vrf = new VrfService(keyService);

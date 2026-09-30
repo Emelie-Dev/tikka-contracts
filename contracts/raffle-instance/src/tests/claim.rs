@@ -133,7 +133,8 @@ fn test_claim_prize_deducts_protocol_fee() {
     let winner = client.get_raffle().winners.get(0).unwrap().address;
     let balance_before = token_client.balance(&winner);
     let gross = MIN_TICKET_PRICE * 10;
-    let prize_fee = (gross * 1_000 + 9_999) / 10_000;
+    // floor(gross × 1_000 / 10_000) — truncating, favours the winner
+    let prize_fee = gross * 1_000 / 10_000;
     let claimed = client.claim_prize(&winner, &0);
 
     assert_eq!(claimed, gross);

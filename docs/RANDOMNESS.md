@@ -12,48 +12,54 @@ Primary helper: `build_internal_seed_u64` in `contracts/raffle-instance/src/help
 
 The internal seed hashes this XDR-packed tuple and takes the first 8 bytes as a `u64`:
 
-1. Ledger timestamp
-1. Ledger sequence
-1. Current raffle contract address
+1. Ledger timestamp (`env.ledger().timestamp()`)
+2. Ledger sequence (`env.ledger().sequence()`)
+3. Current raffle contract address (`env.current_contract_address()`)
 
-Values are XDR-packed and hashed with `env.crypto().sha256`, then fed to `env.prng().seed(...)`. Winner indices are selected via a **partial Fisher–Yates shuffle**: exactly `k` deterministic draws from the PRNG, using swap tracking to guarantee uniqueness without retries or modulo bias. This replaces the previous rejection-sampling loop which had an unbounded retry probability as `k` approached `n`.
+Values are XDR-packed and hashed with `env.crypto().sha256`, producing a 32-byte digest whose first 8 bytes form the `u64` seed. Winner indices are selected via [`OracleSeedWinnerSelection`](../contracts/raffle-instance/src/randomness.rs), which implements a **partial Fisher–Yates shuffle** driven by Knuth's 64-bit Linear Congruential Generator (LCG) with rejection sampling at each step to eliminate modulo bias. Exactly `k` distinct ticket indices are selected in `k` steps using swap tracking, guaranteeing uniqueness without unbounded retry loops.
 
-### Who can influence it
+There is no runtime strategy dispatch, and `env.prng().seed(...)` is never called in the contract runtime.
 
-- Anyone who can choose **when** `finalize_raffle` lands can work from visible ledger state.
-- Validators can influence timestamp/sequence.
-- Outcomes are **deterministic** for identical ledger + raffle inputs (good for audit, bad against motivated bias).
+### Trust Assumptions: Internal Mode
 
-The compact u64 seed used when finalizing through `do_finalize_with_seed` hashes `(timestamp, sequence, current_contract_address)` and takes the first 8 bytes.
-
-### Who can influence it
-
-- Anyone who can choose **when** `finalize_raffle` lands can work from visible ledger state.
-- Validators can influence timestamp/sequence.
-- Outcomes are **deterministic** for identical ledger + raffle inputs (good for audit, bad against motivated bias).
+- **What operators/callers CAN influence**:
+  - **Finalization Timing**: Any observer can inspect current ledger state, precompute the resulting winning ticket indices, and decide whether to call `finalize_raffle` in the current ledger or delay to a subsequent ledger.
+  - **Validator Ordering & Timestamps**: Consensus validators can influence block timestamps and transaction inclusion order to favor specific seeds.
+- **What operators/callers CANNOT influence**:
+  - The deterministic hash function (`SHA-256`) and the winner selection algorithm (`OracleSeedWinnerSelection`).
+  - Contract address and past ticket purchases once committed to ledger storage.
+- **Usage Recommendation**: Strictly for low-stakes raffles (`prize_amount <= MAX_INTERNAL_RANDOMNESS_PRIZE_AMOUNT`, enforced on-chain).
 
 ### Timeout / fallback
 
 None. Finalize completes in the same call once tickets meet `min_tickets`.
 
-### Cost
-## 1. Single-Oracle VRF Mode
+---
+
+## 2. Single-Oracle VRF Mode (`RandomnessSource::External = 1`)
 
 In the single-oracle mode, a single trusted oracle is responsible for generating and delivering randomness.
 
 ### Protocol Flow
 1. The Raffle contract emits a `RandomnessRequested` event containing a unique `request_id`.
-2. The Oracle service detects the event, reads the `request_id` and contract ID, and generates a Verifiable Random Function (VRF) proof.
-3. The Oracle submits the proof and the generated random seed back to the contract via `provide_randomness`.
-4. The contract verifies the VRF proof on-chain using the Oracle's public key. If the proof is valid, the random seed is accepted.
+2. The Oracle service detects the event, reads the `request_id` and contract address, and generates an Ed25519 VRF proof over the message `(contract_address, request_id)` created by `build_vrf_proof_message`.
+3. The Oracle submits the 64-byte proof back to the contract via `provide_randomness(proof)`.
+4. The contract verifies the VRF proof on-chain against the oracle's public key using `env.crypto().ed25519_verify`.
+5. Upon successful verification, the contract derives the `u64` random seed on-chain via `derive_random_seed_from_proof` by hashing the proof with SHA-256 and taking the first 8 bytes as a big-endian `u64`.
+6. Finalization proceeds via `do_finalize_with_seed` using `OracleSeedWinnerSelection`.
 
-### Trust Model & Mitigations
-- *Unpredictability*: Because VRF proofs are cryptographically tied to the Oracle's private key, the random seed is completely unpredictable to anyone (including the players) before it is submitted.
-- *Non-manipulation*: The Oracle cannot bias the randomness because there is only one valid VRF output for a given input (`request_id` + contract address`). The Oracle's only options are to submit the correct value or refuse to submit (causing a Denial of Service, which is monitored and alerted).
+### Trust Assumptions: External / VRF Mode
+
+- **What the oracle CAN influence**:
+  - **Liveness / Denial of Service**: The oracle can refuse or fail to submit `provide_randomness`, causing the draw to stall until the oracle timeout expires. After timeout, participants can trigger fallback or refund depending on contract configuration.
+- **What the oracle CANNOT influence**:
+  - **Random Seed Bias**: The VRF output is cryptographically determined by the oracle's private key and the input message `(contract_address, request_id)`. The oracle cannot alter the seed without producing an invalid signature that fails verification.
+  - **Cross-Raffle / Replay Manipulation**: Proofs cannot be reused across raffles or different draw requests because the verified message binds the contract address and request ID.
+  - **Arbitrary Seed Injection**: The oracle does not supply the seed directly; the seed is derived on-chain from `SHA-256(proof)`.
 
 ---
 
-## 2. Multi-Operator Quorum Mode (k-of-n)
+## 3. Multi-Operator Quorum Mode (k-of-n)
 
 In Quorum mode, a decentralized group of $n$ independent oracles participate, and at least $k$ unique oracle submissions are required to construct the final random seed.
 
@@ -64,9 +70,18 @@ In Quorum mode, a decentralized group of $n$ independent oracles participate, an
 4. The contract stores the submitted seeds.
 5. Once $k$ unique oracles have submitted their seeds, the contract combines the seeds (typically by hashing them together, e.g., `hash(seed_1 + seed_2 + ... + seed_k)`) to produce the final raffle seed.
 
+### Trust Assumptions: Quorum Mode
+
+- **What operators/oracles CAN influence**:
+  - **Liveness / Denial of Service**: A colluding group of $n - k + 1$ oracles can withhold their seeds, preventing the raffle from reaching $k$ submissions before the draw timeout.
+  - **Last-Submitter Bias**: If oracles submit in plaintext and observe previous submissions on-chain, the $k$-th oracle to submit can evaluate the outcome of the aggregate seed before deciding whether to submit their seed or trigger a timeout.
+- **What operators/oracles CANNOT influence**:
+  - **Seed Manipulation**: As long as at least 1 of the $k$ submitting oracles is honest and provides an independent, secret random seed, the resulting aggregate seed remains uniformly distributed and unpredictable to the other $k-1$ colluding oracles prior to that submission.
+  - **No Single Oracle Dictates Outcome**: Unlike single-oracle VRF, compromise of a single oracle private key does not compromise the draw's randomness.
+
 ---
 
-## 3. CommitReveal (`RandomnessSource::CommitReveal = 2`)
+## 4. CommitReveal (`RandomnessSource::CommitReveal = 2`)
 
 ### How the seed is built
 
@@ -74,6 +89,15 @@ In Quorum mode, a decentralized group of $n$ independent oracles participate, an
 1. Entries stored as persistent `CommitEntry(ticket_id)` → `{ committer, hash }` (ticket-keyed so transfers keep entropy; see [COMMIT_REVEAL.md](COMMIT_REVEAL.md)).
 1. On `finalize_raffle`, contract concatenates all present commit hashes in ticket-id order, SHA-256s the blob, and uses the **first 8 bytes** as a `u64` seed.
 1. Finalize proceeds via `do_finalize_with_seed` with `RandomnessType::Prng`.
+
+### Trust Assumptions: Commit-Reveal Mode
+
+- **What participants CAN influence**:
+  - **Selective Participation**: Participants can choose whether to submit commitments. If zero commitments are submitted before finalize, the contract falls back to Internal PRNG.
+  - **Withholding / Last-Commit Bias**: While preimages are concealed, the commitment hashes themselves alter the combined SHA-256 digest in ticket-id order.
+- **What participants CANNOT influence**:
+  - **Preimage Tampering**: Once `submit_commit` is recorded, the commit hash cannot be altered.
+  - **Entropy Integrity**: As long as at least one participant commits an unpredictable secret, the aggregated seed remains unpredictable to outside observers.
 
 ### Who can influence it
 
@@ -123,7 +147,7 @@ issue, not addressed here.
 2. Each oracle submits its randomness via `provide_randomness(random_seed, public_key, proof, request_id)`.
 3. The contract verifies the Ed25519 proof, matches `public_key` to a registered oracle in `oracles`, calls `oracle.require_auth()`, and enforces per-oracle deduplication (`duplicate submissions rejected`).
 4. Delivered seeds are accumulated on-chain under `DataKey::QuorumSeeds` and `DataKey::QuorumOraclesSubmitted`.
-5. Once at least $k$ unique registered oracles have submitted valid seeds, the contract aggregates all delivered seeds via SHA-256 over their concatenated big-endian bytes (`aggregate_quorum_seeds`) to form the final 64-bit seed.
+5. Once at least $k$ unique registered oracles have submitted valid seeds, the contract aggregates all delivered seeds via SHA-256 (`aggregate_quorum_seeds`) to form the final 64-bit seed. Pairs are sorted by oracle address XDR so the result is order-independent, and the hashed preimage is `address(this_contract).to_xdr() || request_id.to_be_bytes()` followed by `address.to_xdr() || seed.to_be_bytes()` per pair. Binding each seed to its contributor prevents an oracle from replaying a previously-seen aggregate, and the contract-address/request prefix keeps identical seed multisets from producing the same draw seed across raffles or requests.
 6. The raffle is finalized via `do_finalize_with_seed` using the aggregated VRF seed.
 
 
@@ -335,7 +359,7 @@ let num_winners = attestation.prize_distribution_bp.len();
 let n = ticket_ids.len() as u64;
 
 // Build the u64 seed the same way the contract does (first 8 bytes of the
-// finalized seed — see build_internal_seed / PrngWinnerSelection for details).
+// finalized seed — see build_internal_seed_u64 / OracleSeedWinnerSelection for details).
 let mut current_seed = seed;
 
 // Partial Fisher–Yates shuffle
@@ -515,7 +539,7 @@ Medium-stakes raffles where buyers can be asked to commit, and you want stronger
 2. Each oracle submits its randomness via `provide_randomness(random_seed, public_key, proof, request_id)`.
 3. The contract verifies the Ed25519 proof, matches `public_key` to a registered oracle in `oracles`, calls `oracle.require_auth()`, and enforces per-oracle deduplication (`duplicate submissions rejected`).
 4. Delivered seeds are accumulated on-chain under `DataKey::QuorumSeeds` and `DataKey::QuorumOraclesSubmitted`.
-5. Once at least $k$ unique registered oracles have submitted valid seeds, the contract aggregates all delivered seeds via SHA-256 over their concatenated big-endian bytes (`aggregate_quorum_seeds`) to form the final 64-bit seed.
+5. Once at least $k$ unique registered oracles have submitted valid seeds, the contract aggregates all delivered seeds via SHA-256 (`aggregate_quorum_seeds`) to form the final 64-bit seed. Pairs are sorted by oracle address XDR so the result is order-independent, and the hashed preimage is `address(this_contract).to_xdr() || request_id.to_be_bytes()` followed by `address.to_xdr() || seed.to_be_bytes()` per pair. Binding each seed to its contributor prevents an oracle from replaying a previously-seen aggregate, and the contract-address/request prefix keeps identical seed multisets from producing the same draw seed across raffles or requests.
 6. The raffle is finalized via `do_finalize_with_seed` using the aggregated VRF seed.
 
 
@@ -796,7 +820,7 @@ Verification strength depends on the randomness source:
 
 | Source | Verification confirms | External trust needed |
 |---|---|---|
-| **External (VRF)** | Ed25519 signature over `(contract, request_id, seed)` binds oracle to unpredictable commitment | Oracle didn't collude with finalize timing |
+| **External (VRF)** | Ed25519 signature over `(contract, request_id)` binds oracle to this raffle and request; seed is derived on-chain via `derive_random_seed_from_proof` | Oracle didn't withhold randomness |
 | **CommitReveal** | Seed derived from ticket-holder commits; verify commits via `CommitEntry(ticket_id)` storage | Enough participants committed unpredictable secrets |
 | **Internal** | Deterministic from ledger state; any validator could predict at finalize time | Finalizer timing wasn't adversarially chosen |
 | **Fallback** | Same as Internal (used when External oracle timed out) | Same trust model as Internal |
@@ -804,11 +828,10 @@ Verification strength depends on the randomness source:
 For External/VRF draws, verify the Ed25519 signature:
 
 ```rust
-// Message format: XDR(contract_address, request_id, random_seed)
+// Message format: XDR(contract_address, request_id)
 let message = build_vrf_proof_message(
-    raffle_contract,
-    attestation.fairness_data.seed, // request_id stored in FairnessMetadata
-    attestation.fairness_data.seed
+    env,
+    request_id,
 );
 
 env.crypto().ed25519_verify(
@@ -816,6 +839,10 @@ env.crypto().ed25519_verify(
     &message,
     &stored_proof // from provide_randomness callback
 );
+
+// Derive and verify the canonical seed from the proof:
+let derived_seed = derive_random_seed_from_proof(env, &stored_proof);
+assert_eq!(derived_seed, attestation.fairness_data.seed);
 ```
 
 ### Example: Complete Audit Script
@@ -891,24 +918,33 @@ To prevent a malicious or lazy $k$-th oracle from holding the raffle hostage ind
 
 ---
 
-## 4. Internal Seed Construction (Draw Seed)
+## 5. Internal Seed Construction (Draw Seed)
 
-For deterministic winner selection, the contract derives an internal seed by hashing the XDR encoding of a tuple containing the ledger timestamp, ledger sequence number, network identifier, and raffle contract address.
+The crate contains two internal seed/entropy derivation helpers:
 
-### Byte Layout
-The raw value fed to `hash_bytes32`is the XDR serialization of:
+### 1. Active Draw Seed: `build_internal_seed_u64`
+Used on-chain during `RandomnessSource::Internal` draws and oracle fallback in `contracts/raffle-instance/src/draw.rs`.
 
+The raw value fed to `env.crypto().sha256` is the XDR serialization of the 3-field tuple:
+```
+(timestamp: u64, sequence: u32, raffle_address: Address)
+```
+Where:
+- `timestamp` is `env.ledger().timestamp()`.
+- `sequence` is `env.ledger().sequence()`.
+- `raffle_address` is `env.current_contract_address()`.
+
+The first 8 bytes of the resulting 32-byte SHA-256 digest are extracted as a big-endian `u64` seed passed into `do_finalize_with_seed`.
+
+### 2. Base Entropy Helper: `build_internal_seed`
+Defined in `contracts/raffle-instance/src/randomness.rs`, this helper produces a full 32-byte base entropy digest:
 ```
 (timestamp: u64, sequence: u32, network_id: BytesN<32>, raffle_address: Address)
 ```
-
 Where:
-
 - `timestamp` is `env.ledger().timestamp()`.
 - `sequence` is `env.ledger().sequence()`.
-- `network_id` is `env.network_id()`, which is the network passphrase identifier (e.g. main, 4testnet, futurenet). This ensures that identical raffle parameters produce different draws on different networks.
-- `raffle_address` is the current contract address (`env.current_contract_address()`), which uniquely identifies the raffle instance.
+- `network_id` is `env.ledger().network_id()` (the network passphrase hash, ensuring domain separation across networks).
+- `raffle_address` is the contract address.
 
-The XDR tuple is hashed using SHA-256 (`hash_bytes32`). The returned `BytesN<32>` seed is converted to the `u64` internal seed by taking the first 8 bytes of the SHA-256 output and interpreting them as a big-endian integer.
-
-This is the only internal seed construction in the crate; all callers use `build_internal_seed_u64(env, &env.current_contract_address())`.
+It is used alongside `PrngWinnerSelection::seed_fingerprint` for compact fingerprint derivation.

@@ -12,8 +12,10 @@ use soroban_sdk::testutils::Address as _;
 mod events;
 mod views;
 
+pub mod recurring;
 pub mod registry;
 
+pub use recurring::{RecurringDataKey, RecurringRaffleEntry};
 pub use registry::{CreatorProfile, LeaderboardMetric, PartnerStats};
 
 use raffle_shared::{
@@ -81,17 +83,6 @@ pub struct StateCheckpoint {
 /// Each variant maps to exactly one storage slot, keeping reads and writes
 /// O(1). The stable-map design (`RaffleById` / `NextRaffleId`) means that
 /// adding or removing a raffle never touches any other raffle's slot.
-#[derive(Clone)]
-#[contracttype]
-pub struct RecurringRaffleEntry {
-    pub creator: Address,
-    pub config: RecurringRaffleConfig,
-    pub next_due: u64,
-    pub current_round: u32,
-    pub active: bool,
-    pub last_raffle_address: Option<Address>,
-}
-
 #[derive(Clone)]
 #[contracttype]
 pub enum DataKey {
@@ -192,12 +183,6 @@ pub enum DataKey {
     /// carries a category, enabling `get_raffles_by_category` queries without an
     /// off-chain indexer.
     CategoryRaffles(soroban_sdk::String),
-    /// Recurring (subscription) raffle state by ID.
-    RecurringRaffle(u32),
-    /// Monotonic counter assigned to the next recurring raffle.
-    NextRecurringId,
-    /// ID → list of raffle addresses created across all rounds so far.
-    RecurringRaffleInstances(u32),
     /// Whether creation of new raffles is currently paused (#611). Distinct
     /// from `DataKey::Paused`, which halts the entire factory; this flag only
     /// blocks `create_raffle`, leaving all other admin operations, reads, and
@@ -404,7 +389,7 @@ fn require_valid_role_address(env: &Env, address: &Address) -> Result<(), Contra
     Ok(())
 }
 
-fn create_raffle_internal(
+pub(crate) fn create_raffle_internal(
     env: &Env,
     creator: Address,
     config: RaffleConfig,
@@ -1016,217 +1001,6 @@ impl RaffleFactory {
 
         create_raffle_internal(&env, creator, final_config)
     }
-
-    pub fn create_recurring_raffle(
-        env: Env,
-        creator: Address,
-        config: RecurringRaffleConfig,
-    ) -> Result<u32, ContractError> {
-        creator.require_auth();
-        require_factory_not_paused(&env)?;
-
-        if config.interval_seconds < MIN_RECURRING_INTERVAL_SECONDS
-            || config.interval_seconds > MAX_RECURRING_INTERVAL_SECONDS
-        {
-            return Err(ContractError::InvalidParameters);
-        }
-
-        if config.max_rounds == 0 && config.auto_fund {
-            return Err(ContractError::InvalidParameters);
-        }
-
-        let recurring_id: u32 = env
-            .storage()
-            .persistent()
-            .get(&DataKey::NextRecurringId)
-            .unwrap_or(0u32);
-
-        let now = env.ledger().timestamp();
-        let interval = config.interval_seconds;
-        let entry = RecurringRaffleEntry {
-            creator: creator.clone(),
-            config,
-            next_due: now.saturating_add(interval),
-            current_round: 0,
-            active: true,
-            last_raffle_address: None,
-        };
-
-        env.storage()
-            .persistent()
-            .set(&DataKey::RecurringRaffle(recurring_id), &entry);
-        env.storage()
-            .persistent()
-            .set(&DataKey::NextRecurringId, &(recurring_id.saturating_add(1)));
-        env.storage()
-            .persistent()
-            .set(&DataKey::RecurringRaffleInstances(recurring_id), &Vec::<Address>::new(&env));
-
-        events::RecurringRaffleCreated {
-            recurring_id,
-            creator,
-            interval_seconds: entry.config.interval_seconds,
-            max_rounds: entry.config.max_rounds,
-            auto_fund: entry.config.auto_fund,
-            next_due: entry.next_due,
-            timestamp: now,
-        }
-        .publish(&env);
-
-        Ok(recurring_id)
-    }
-
-    pub fn trigger_next_round(
-        env: Env,
-        recurring_id: u32,
-    ) -> Result<Address, ContractError> {
-        require_factory_not_paused(&env)?;
-
-        let mut entry: RecurringRaffleEntry = env
-            .storage()
-            .persistent()
-            .get(&DataKey::RecurringRaffle(recurring_id))
-            .ok_or(ContractError::RecurringNotFound)?;
-
-        if !entry.active {
-            return Err(ContractError::RecurringInactive);
-        }
-
-        let now = env.ledger().timestamp();
-        if now < entry.next_due {
-            return Err(ContractError::IntervalNotElapsed);
-        }
-
-        if entry.config.max_rounds > 0 && entry.current_round >= entry.config.max_rounds {
-            return Err(ContractError::MaxRoundsReached);
-        }
-
-        let config = RaffleConfigBuilder::from_config(&env, entry.config.base_config.clone())
-            .build()
-            .map_err(|_| ContractError::InvalidParameters)?;
-        let raffle_address = self::create_raffle_internal(
-            &env,
-            entry.creator.clone(),
-            config,
-        )?;
-
-        entry.current_round = entry.current_round.saturating_add(1);
-        entry.next_due = now.saturating_add(entry.config.interval_seconds);
-        entry.last_raffle_address = Some(raffle_address.clone());
-
-        let mut instances: Vec<Address> = env
-            .storage()
-            .persistent()
-            .get(&DataKey::RecurringRaffleInstances(recurring_id))
-            .unwrap_or_else(|| Vec::new(&env));
-        instances.push_back(raffle_address.clone());
-        env.storage()
-            .persistent()
-            .set(&DataKey::RecurringRaffleInstances(recurring_id), &instances);
-
-        env.storage()
-            .persistent()
-            .set(&DataKey::RecurringRaffle(recurring_id), &entry);
-
-        events::RecurringRoundTriggered {
-            recurring_id,
-            round: entry.current_round,
-            raffle_address: raffle_address.clone(),
-            next_due: entry.next_due,
-            timestamp: now,
-        }
-        .publish(&env);
-
-        // --- partner dashboard stats (#488) ---
-        let creator = entry.creator.clone();
-        let is_whitelisted = env.storage().persistent().has(&DataKey::WhitelistedPartner(creator.clone()));
-        if is_whitelisted {
-            let now = env.ledger().timestamp();
-            let mut stats: PartnerStats = env
-                .storage()
-                .persistent()
-                .get(&DataKey::PartnerStats(creator.clone()))
-                .unwrap_or(PartnerStats {
-                    total_raffles: 0,
-                    total_volume: 0,
-                    total_fees_generated: 0,
-                    first_raffle_at: now,
-                    latest_raffle_at: 0,
-                });
-            if stats.total_raffles == 0 {
-                stats.first_raffle_at = now;
-            }
-            stats.total_raffles = stats.total_raffles.saturating_add(1);
-            stats.latest_raffle_at = now;
-            env.storage()
-                .persistent()
-                .set(&DataKey::PartnerStats(creator), &stats);
-        }
-
-        Ok(raffle_address)
-    }
-
-    pub fn cancel_recurring_raffle(
-        env: Env,
-        recurring_id: u32,
-        caller: Address,
-    ) -> Result<(), ContractError> {
-        let entry: RecurringRaffleEntry = env
-            .storage()
-            .persistent()
-            .get(&DataKey::RecurringRaffle(recurring_id))
-            .ok_or(ContractError::RecurringNotFound)?;
-
-        if caller != entry.creator {
-            let admin = require_admin(&env)?;
-            if caller != admin {
-                return Err(ContractError::NotAuthorized);
-            }
-        }
-        caller.require_auth();
-
-        env.storage()
-            .persistent()
-            .set(
-                &DataKey::RecurringRaffle(recurring_id),
-                &RecurringRaffleEntry {
-                    active: false,
-                    ..entry
-                },
-            );
-
-        events::RecurringRaffleCancelled {
-            recurring_id,
-            cancelled_by: caller,
-            rounds_completed: entry.current_round,
-            timestamp: env.ledger().timestamp(),
-        }
-        .publish(&env);
-
-        Ok(())
-    }
-
-    pub fn get_recurring_raffle(env: Env, recurring_id: u32) -> Option<RecurringRaffleEntry> {
-        env.storage()
-            .persistent()
-            .get(&DataKey::RecurringRaffle(recurring_id))
-    }
-
-    pub fn get_recurring_instances(
-        env: Env,
-        recurring_id: u32,
-    ) -> Vec<Address> {
-        env.storage()
-            .persistent()
-            .get(&DataKey::RecurringRaffleInstances(recurring_id))
-            .unwrap_or_else(|| Vec::new(&env))
-    }
-
-
-
-
-
-
 
     /// Accumulate `amount` into the running volume counter for `asset`.
     ///

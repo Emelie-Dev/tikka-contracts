@@ -1,19 +1,50 @@
 # Supply-chain policy for the Rust workspace.
 # See CONTRIBUTING.md for how to request exceptions.
+#
+# Checked on every PR and on the weekly schedule by the cargo-deny step in
+# .github/workflows/security-audit.yml.
 
-[licenses]
-allow = [
-  'MIT',
-  'Apache-2.0',
-  'Apache-2.0 WITH LLVM-exception',
-  'ISC',
-  'BSD-2-Clause',
-  'BSD-3-Clause',
+# ── Advisories ────────────────────────────────────────────────────────────────
+[advisories]
+# version = 2 silences the deprecation notice for pre-2.0 fields
+# (vulnerability / notice / severity-threshold), none of which we used.
+version = 2
+
+# Unmaintained-only advisory exceptions inherited from .cargo/audit.toml.
+# Both are proc-macro build-time deps pulled in by soroban-env-host 23.x via
+# the arkworks crate graph; they cannot be removed without a soroban-sdk major
+# upgrade. Re-evaluate at the next SDK major upgrade.
+# See .cargo/audit.toml and SECURITY.md → "Existing findings".
+ignore = [
+  { id = "RUSTSEC-2024-0388", reason = "derivative: unmaintained proc-macro via ark-ec; soroban-env-host 23.x dependency, cannot remove without SDK major upgrade" },
+  { id = "RUSTSEC-2024-0436", reason = "paste: unmaintained proc-macro via ark-ff; soroban-env-host 23.x dependency, cannot remove without SDK major upgrade" },
 ]
 
+# ── Licenses ──────────────────────────────────────────────────────────────────
+[licenses]
+# version = 2 removes the old unlicensed / deny / copyleft / default fields.
+# All licenses are denied unless explicitly listed below.
+version = 2
+
+allow = [
+  "MIT",
+  "Apache-2.0",
+  "Apache-2.0 WITH LLVM-exception",
+  "ISC",
+  "BSD-2-Clause",
+  "BSD-3-Clause",
+]
+
+# ── Bans ──────────────────────────────────────────────────────────────────────
 [bans]
-multiple-versions = 'warn'
+# Warn on duplicate versions rather than failing — soroban-sdk pulls in several
+# duplicate crates at different versions that we cannot control.
+multiple-versions = "warn"
 deny = []
 
-[advisories]
-ignore = []
+# ── Sources ───────────────────────────────────────────────────────────────────
+[sources]
+# Deny crates from registries or git repos not explicitly allowed.
+# All production dependencies must come from crates.io.
+unknown-registry = "deny"
+unknown-git = "deny"

@@ -5,6 +5,9 @@ pub mod constants;
 pub mod config_builder;
 pub mod errors;
 pub mod events;
+pub mod math;
+
+pub use math::{apply_bp, split_bp, BP_DENOMINATOR};
 
 pub use config_builder::{ConfigValidationError, RaffleConfigBuilder};
 
@@ -157,8 +160,13 @@ pub enum RandomnessType {
 /// Configuration for a recurring (subscription) raffle.
 ///
 /// Enables automatic creation of new raffle instances at a fixed interval
-/// without manual re-deployment.  Designed for weekly / monthly raffles.
-#[derive(Clone)]
+/// without manual re-deployment. Designed for weekly / monthly raffles.
+///
+/// Note: Prize funding is not automatic. When each round is triggered, the
+/// deployed raffle instance starts in `PendingPrize` state. The raffle creator
+/// (or authorized funder) must call `deposit_prize` on the newly deployed
+/// raffle instance to activate ticket sales.
+#[derive(Clone, Debug, PartialEq, Eq)]
 #[contracttype]
 pub struct RecurringRaffleConfig {
     /// The base raffle configuration reused for every round.
@@ -167,9 +175,6 @@ pub struct RecurringRaffleConfig {
     pub interval_seconds: u64,
     /// Maximum number of rounds (0 = infinite).
     pub max_rounds: u32,
-    /// If true, the creator must pre-authorise the prize funds (not yet
-    /// implemented — reserved for future use).
-    pub auto_fund: bool,
 }
 
 /// Configuration payload used when creating a new raffle.
@@ -213,6 +218,14 @@ pub struct RaffleConfig {
     pub randomness_source: RandomnessSource,
     /// Optional oracle contract address for external randomness flows.
     pub oracle_address: Option<Address>,
+    /// Ed25519 public key (32 bytes) belonging to the registered oracle.
+    ///
+    /// Required when `randomness_source == External`.  The raffle-instance
+    /// stores this key and rejects any `provide_randomness` call whose
+    /// `public_key` argument does not match — preventing an adversary from
+    /// substituting a throwaway keypair whose proof hashes to a favourable
+    /// seed (#985).
+    pub oracle_public_key: Option<BytesN<32>>,
     /// Protocol fee in basis points (100 = 1%). Currently charged at ticket
     /// purchase only. See docs/FEE_MODEL.md for the implemented fee model.
     pub protocol_fee_bp: u32,

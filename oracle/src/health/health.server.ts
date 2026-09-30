@@ -10,7 +10,7 @@ export interface HealthServerOptions {
  * on a single HTTP server.
  */
 export function startHealthServer(options: HealthServerOptions = {}): http.Server {
-  const port = options.port ?? Number(process.env['HEALTH_PORT'] ?? 9090);
+  const port = options.port ?? 9090;
 
   const server = http.createServer(async (req, res) => {
     const path = req.url?.split('?')[0];

@@ -34,7 +34,7 @@ fn test_admin_updates_oracle_address() {
     let raffle = client.get_raffle();
     assert_eq!(raffle.claim_lockup_seconds, DEFAULT_CLAIM_LOCKUP_SECONDS);
     assert_eq!(raffle.swap_deadline_seconds, DEFAULT_SWAP_DEADLINE_SECONDS);
-    client.update_oracle_address(&new_oracle);
+    client.update_oracle_address(&new_oracle, &None);
 
     let raffle = client.get_raffle();
     assert_eq!(raffle.oracle_address, Some(new_oracle));

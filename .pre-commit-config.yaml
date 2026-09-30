@@ -26,6 +26,18 @@ repos:
         entry: python3 scripts/check_orphan_modules.py
         language: system
         pass_filenames: false
+      - id: ruff-lint
+        name: ruff lint
+        entry: ruff check scripts/
+        language: system
+        pass_filenames: false
+        types: [python]
+      - id: ruff-format
+        name: ruff format check
+        entry: ruff format --check scripts/
+        language: system
+        pass_filenames: false
+        types: [python]
       - id: check-duplicate-items
         name: check duplicate Rust items
         entry: python3 scripts/check_duplicate_items.py

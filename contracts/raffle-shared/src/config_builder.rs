@@ -36,6 +36,7 @@ pub struct RaffleConfigBuilder<'a> {
     prizes: Vec<u32>,
     randomness_source: RandomnessSource,
     oracle_address: Option<Address>,
+    oracle_public_key: Option<BytesN<32>>,
     protocol_fee_bp: u32,
     treasury_address: Option<Address>,
     swap_router: Option<Address>,
@@ -75,6 +76,7 @@ impl<'a> RaffleConfigBuilder<'a> {
             prizes: Vec::from_array(env, [10_000]),
             randomness_source: RandomnessSource::Internal,
             oracle_address: None,
+            oracle_public_key: None,
             protocol_fee_bp: 0,
             treasury_address: None,
             swap_router: None,
@@ -111,6 +113,7 @@ impl<'a> RaffleConfigBuilder<'a> {
             prizes: config.prizes,
             randomness_source: config.randomness_source,
             oracle_address: config.oracle_address,
+            oracle_public_key: config.oracle_public_key,
             protocol_fee_bp: config.protocol_fee_bp,
             treasury_address: config.treasury_address,
             swap_router: config.swap_router,
@@ -196,6 +199,16 @@ impl<'a> RaffleConfigBuilder<'a> {
 
     pub fn oracle_address(mut self, oracle_address: Option<Address>) -> Self {
         self.oracle_address = oracle_address;
+        self
+    }
+
+    /// Set the Ed25519 public key for the registered VRF oracle (#985).
+    ///
+    /// Must be set alongside `oracle_address` when
+    /// `randomness_source == External` so that `provide_randomness` can
+    /// verify the submitted `public_key` argument matches the key on record.
+    pub fn oracle_public_key(mut self, oracle_public_key: Option<BytesN<32>>) -> Self {
+        self.oracle_public_key = oracle_public_key;
         self
     }
 
@@ -290,6 +303,7 @@ impl<'a> RaffleConfigBuilder<'a> {
             prizes: self.prizes,
             randomness_source: self.randomness_source,
             oracle_address: self.oracle_address,
+            oracle_public_key: self.oracle_public_key,
             protocol_fee_bp: self.protocol_fee_bp,
             treasury_address: self.treasury_address,
             swap_router: self.swap_router,

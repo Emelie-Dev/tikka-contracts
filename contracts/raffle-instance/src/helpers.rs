@@ -386,10 +386,7 @@ pub(crate) fn calculate_buy_quote(raffle: &Raffle, quantity: u32) -> Result<BuyQ
             .ok_or(Error::ArithmeticOverflow)?
             / 100;
         if (raffle.tickets_sold as u64) < threshold {
-            gross
-                .checked_mul(raffle.early_bird_discount_bp as i128)
-                .ok_or(Error::ArithmeticOverflow)?
-                / 10000
+            apply_bp(gross, raffle.early_bird_discount_bp).map_err(|_| Error::ArithmeticOverflow)?
         } else {
             0
         }
@@ -401,10 +398,7 @@ pub(crate) fn calculate_buy_quote(raffle: &Raffle, quantity: u32) -> Result<BuyQ
         .checked_sub(discount)
         .ok_or(Error::ArithmeticOverflow)?;
 
-    let fee = net_to_pay
-        .checked_mul(raffle.protocol_fee_bp as i128)
-        .ok_or(Error::ArithmeticOverflow)?
-        / 10000;
+    let fee = apply_bp(net_to_pay, raffle.protocol_fee_bp).map_err(|_| Error::ArithmeticOverflow)?;
 
     let effective_ticket_price = net_to_pay / (quantity as i128);
 
@@ -439,11 +433,7 @@ pub(crate) fn calculate_tier_prize(raffle: &Raffle, tier_index: u32) -> Result<i
         return Err(Error::InvalidIndex);
     }
     let bp = raffle.prizes.get(tier_index).ok_or(Error::InvalidIndex)?;
-    raffle
-        .prize_amount
-        .checked_mul(bp as i128)
-        .ok_or(Error::ArithmeticOverflow)
-        .map(|a| a / 10000)
+    apply_bp(raffle.prize_amount, bp).map_err(|_| Error::ArithmeticOverflow)
 }
 
 /// Finalize the raffle using a pre-computed `u64` seed.
@@ -605,10 +595,12 @@ fn record_leaderboard(env: &Env, raffle: &Raffle) {
     let eb_tickets = if tickets < eb_limit { tickets } else { eb_limit };
     let norm_tickets = tickets.saturating_sub(eb_tickets);
     
-    let discounted_price = raffle.ticket_price
-        .saturating_mul(10000_i128.saturating_sub(raffle.early_bird_discount_bp as i128))
-        / 10000;
-        
+    let discounted_price = apply_bp(
+        raffle.ticket_price,
+        (10_000u32).saturating_sub(raffle.early_bird_discount_bp),
+    )
+    .unwrap_or(raffle.ticket_price);
+
     let volume = (eb_tickets as i128).saturating_mul(discounted_price)
         .saturating_add((norm_tickets as i128).saturating_mul(raffle.ticket_price));
 
@@ -640,6 +632,7 @@ fn record_leaderboard(env: &Env, raffle: &Raffle) {
 }
 
 use raffle_shared::BuyQuote;
+use raffle_shared::math::{apply_bp, split_bp};
 
 
 
@@ -675,10 +668,7 @@ fn ticket_payment_amount(raffle: &Raffle, ticket_id: u32) -> i128 {
         return raffle.ticket_price;
     }
 
-    let discount = raffle
-        .ticket_price
-        .checked_mul(raffle.early_bird_discount_bp as i128)
-        .and_then(|value| value.checked_div(10_000))
+    let discount = apply_bp(raffle.ticket_price, raffle.early_bird_discount_bp)
         .expect("solvency invariant overflow while calculating early-bird discount");
     raffle
         .ticket_price

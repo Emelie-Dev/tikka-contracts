@@ -47,6 +47,7 @@ fn setup_unique_winners_raffle(env: &Env) -> (ContractClient<'_>, Address, Addre
         prizes: soroban_sdk::vec![env, 6000u32, 3000, 1000],
         randomness_source: RandomnessSource::Internal,
         oracle_address: None,
+        oracle_public_key: None,
         protocol_fee_bp: 0,
         treasury_address: None,
         swap_router: None,
@@ -140,4 +141,82 @@ fn snapshot(env: &Env) -> (u64, u64) {
         budget.cpu_instruction_cost(),
         budget.memory_bytes_cost(),
     )
+}
+
+// ── Acceptance-criterion tests for #1006 ─────────────────────────────────────
+//
+// Regression guard: select_winner_indices(env, n, k) must return exactly
+// min(k, n) indices.  The bug kept `drawn_count` at zero so the break never
+// fired, and the loop collected every unique index up to total_tickets instead
+// of stopping at winner_count.
+
+#[cfg(test)]
+mod winner_count_regression {
+    use crate::randomness::{OracleSeedWinnerSelection, PrngWinnerSelection, WinnerSelectionStrategy};
+    use soroban_sdk::{Address, Env};
+
+    /// k = 1: a single-winner draw must return exactly one index.
+    #[test]
+    fn prng_returns_exactly_one_winner_when_k_is_one() {
+        let env = Env::default();
+        let contract = env
+            .register_stellar_asset_contract_v2(Address::generate(&env))
+            .address();
+        let raffle_id = Address::generate(&env);
+        let selector = PrngWinnerSelection::new(raffle_id, 50);
+        let indices = env.as_contract(&contract, || {
+            selector.select_winner_indices(&env, 50, 1)
+        });
+        assert_eq!(
+            indices.len(),
+            1,
+            "k=1: expected exactly 1 winner, got {}",
+            indices.len()
+        );
+    }
+
+    /// k = prizes.len(): a multi-tier draw must return exactly prizes.len() indices.
+    #[test]
+    fn prng_returns_exactly_prize_count_winners() {
+        let env = Env::default();
+        let contract = env
+            .register_stellar_asset_contract_v2(Address::generate(&env))
+            .address();
+        let raffle_id = Address::generate(&env);
+        let prizes_len: u32 = 3;
+        let selector = PrngWinnerSelection::new(raffle_id, 500);
+        let indices = env.as_contract(&contract, || {
+            selector.select_winner_indices(&env, 500, prizes_len)
+        });
+        assert_eq!(
+            indices.len(),
+            prizes_len,
+            "k=prizes_len: expected {} winners, got {}",
+            prizes_len,
+            indices.len()
+        );
+    }
+
+    /// k > n: when more winners are requested than tickets exist, return at
+    /// most n (no duplicates possible beyond that cap).
+    #[test]
+    fn oracle_seed_caps_at_total_tickets_when_k_exceeds_n() {
+        let selector = OracleSeedWinnerSelection::new(0xDEAD_BEEF_1234_5678);
+        let total_tickets: u32 = 4;
+        let winner_count: u32 = 10; // k > n
+        let indices = selector.select_winner_indices_pure(total_tickets, winner_count);
+        assert_eq!(
+            indices.len(),
+            total_tickets as usize,
+            "k>n: expected {} winners (capped at total_tickets), got {}",
+            total_tickets,
+            indices.len()
+        );
+        // All indices must be unique and in-range.
+        let mut seen = std::collections::HashSet::new();
+        for &idx in &indices {
+            assert!(idx < total_tickets, "index {idx} out of range [0, {total_tickets})");
+            assert!(seen.insert(idx), "duplicate index {idx}");
+        }
+    }
 }

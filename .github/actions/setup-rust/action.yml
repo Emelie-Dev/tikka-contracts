@@ -1,0 +1,15 @@
+name: Set up pinned Rust toolchain
+description: >
+  Installs the Rust toolchain channel declared in rust-toolchain.toml (the
+  single source of truth per issues #841/#843).
+  To also install the Stellar CLI, add a separate
+  ./.github/actions/setup-stellar-cli step after this one.
+
+runs:
+  using: composite
+  steps:
+    - name: Install pinned Rust toolchain from rust-toolchain.toml
+      shell: bash
+      run: |
+        rustup toolchain install "$(awk -F'"' '/^channel/ { print $2; exit }' rust-toolchain.toml)"
+        rustup show

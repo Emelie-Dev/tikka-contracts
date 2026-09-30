@@ -45,6 +45,7 @@ fn test_raffle(env: &Env, weights: &[u32], prize_amount: i128) -> Raffle {
         claimed_winners: Vec::new(env),
         randomness_source: raffle_shared::RandomnessSource::Internal,
         oracle_address: None,
+        oracle_public_key: None,
         protocol_fee_bp: 0,
         treasury_address: None,
         swap_router: None,

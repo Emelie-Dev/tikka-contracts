@@ -1,8 +1,10 @@
 extern crate std;
 use std::format;
 
-use raffle_shared::{PaginationParams, RandomnessSource, RaffleConfigBuilder, MAX_PAGE_LIMIT};
-use soroban_sdk::{testutils::Address as _, Address, BytesN, Env, String, Vec as SdkVec};
+// All raffle_shared and soroban_sdk items are re-exported by the parent
+// mod.rs via `use super::*`.  Importing them again here would create the
+// duplicate import blocks that caused E0252 (#982).
+use super::*;
 
 use crate::{RaffleConfig, RaffleFactory, RaffleFactoryClient};
 
