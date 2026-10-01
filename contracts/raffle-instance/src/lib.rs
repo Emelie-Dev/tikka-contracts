@@ -810,7 +810,7 @@ if config.randomness_source == RandomnessSource::External {
     /// Only available in `Finalized` or `Claimed` states; returns `InvalidStatus`
     /// otherwise.
     ///
-    /// See [`docs/RANDOMNESS.md`] for the verification procedure.
+    /// See [`docs/RANDOMNESS.md`](../../../docs/RANDOMNESS.md) for the verification procedure.
     pub fn get_draw_attestation(
         env: Env,
     ) -> Result<attestation::DrawAttestation, Error> {

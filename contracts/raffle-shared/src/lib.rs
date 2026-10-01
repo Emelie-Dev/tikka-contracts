@@ -313,7 +313,11 @@ impl RaffleConfig {
 pub struct Ticket {
     /// Monotonic ticket identifier scoped to a raffle.
     pub id: u32,
-    /// Address that owns this ticket.
+    /// Address that owns this ticket, i.e. the entrant in the draw.
+    ///
+    /// For a gift purchase (`buy_tickets_for`) this is the recipient and may
+    /// differ from [`Ticket::payer`]. The owner never receives refunds: see
+    /// [`Ticket::payer`].
     pub owner: Address,
     /// Unix timestamp when the ticket was purchased.
     pub purchase_time: u64,
@@ -321,6 +325,11 @@ pub struct Ticket {
     /// It is kept equal to `id` for the current contract implementation.
     pub ticket_number: u32,
     /// The address that paid for this ticket.
+    ///
+    /// Refunds follow the payer, never the owner, so that a refund always
+    /// returns funds to the party that was out of pocket. This holds for every
+    /// refund path (`refund_ticket` and `batch_refund_tickets`), including
+    /// gift purchases where payer and owner are distinct addresses.
     pub payer: Address,
     /// Price actually paid for this ticket (in token base units).
     /// Records the effective price including any early-bird discount.
@@ -776,6 +785,143 @@ mod exceeds_internal_randomness_cap_tests {
 mod raffle_status_tests {
     use super::RaffleStatus;
 
+    /// Exhaustive match over RaffleStatus variants.
+    /// Adding a new variant to RaffleStatus will fail compilation here
+    /// until this match, `RaffleStatus::all()`, and the expected matrices are updated.
+    fn assert_all_variants_handled(status: RaffleStatus) {
+        match status {
+            RaffleStatus::PendingPrize => (),
+            RaffleStatus::Active => (),
+            RaffleStatus::Drawing => (),
+            RaffleStatus::Finalized => (),
+            RaffleStatus::Cancelled => (),
+            RaffleStatus::Failed => (),
+            RaffleStatus::Claimed => (),
+        }
+    }
+
+    /// Hardcoded expected transition matrix for can_transition_to.
+    /// Writing this matrix by hand states the legal transition graph once for review.
+    const EXPECTED_TRANSITIONS: [(RaffleStatus, RaffleStatus, bool); 49] = [
+        // From PendingPrize
+        (RaffleStatus::PendingPrize, RaffleStatus::PendingPrize, false),
+        (RaffleStatus::PendingPrize, RaffleStatus::Active, true),
+        (RaffleStatus::PendingPrize, RaffleStatus::Drawing, false),
+        (RaffleStatus::PendingPrize, RaffleStatus::Finalized, false),
+        (RaffleStatus::PendingPrize, RaffleStatus::Cancelled, false),
+        (RaffleStatus::PendingPrize, RaffleStatus::Failed, false),
+        (RaffleStatus::PendingPrize, RaffleStatus::Claimed, false),
+        // From Active
+        (RaffleStatus::Active, RaffleStatus::PendingPrize, false),
+        (RaffleStatus::Active, RaffleStatus::Active, false),
+        (RaffleStatus::Active, RaffleStatus::Drawing, true),
+        (RaffleStatus::Active, RaffleStatus::Finalized, false),
+        (RaffleStatus::Active, RaffleStatus::Cancelled, true),
+        (RaffleStatus::Active, RaffleStatus::Failed, true),
+        (RaffleStatus::Active, RaffleStatus::Claimed, false),
+        // From Drawing
+        (RaffleStatus::Drawing, RaffleStatus::PendingPrize, false),
+        (RaffleStatus::Drawing, RaffleStatus::Active, false),
+        (RaffleStatus::Drawing, RaffleStatus::Drawing, false),
+        (RaffleStatus::Drawing, RaffleStatus::Finalized, true),
+        (RaffleStatus::Drawing, RaffleStatus::Cancelled, true),
+        (RaffleStatus::Drawing, RaffleStatus::Failed, false),
+        (RaffleStatus::Drawing, RaffleStatus::Claimed, false),
+        // From Finalized
+        (RaffleStatus::Finalized, RaffleStatus::PendingPrize, false),
+        (RaffleStatus::Finalized, RaffleStatus::Active, false),
+        (RaffleStatus::Finalized, RaffleStatus::Drawing, false),
+        (RaffleStatus::Finalized, RaffleStatus::Finalized, false),
+        (RaffleStatus::Finalized, RaffleStatus::Cancelled, false),
+        (RaffleStatus::Finalized, RaffleStatus::Failed, false),
+        (RaffleStatus::Finalized, RaffleStatus::Claimed, true),
+        // From Cancelled (terminal)
+        (RaffleStatus::Cancelled, RaffleStatus::PendingPrize, false),
+        (RaffleStatus::Cancelled, RaffleStatus::Active, false),
+        (RaffleStatus::Cancelled, RaffleStatus::Drawing, false),
+        (RaffleStatus::Cancelled, RaffleStatus::Finalized, false),
+        (RaffleStatus::Cancelled, RaffleStatus::Cancelled, false),
+        (RaffleStatus::Cancelled, RaffleStatus::Failed, false),
+        (RaffleStatus::Cancelled, RaffleStatus::Claimed, false),
+        // From Failed (terminal)
+        (RaffleStatus::Failed, RaffleStatus::PendingPrize, false),
+        (RaffleStatus::Failed, RaffleStatus::Active, false),
+        (RaffleStatus::Failed, RaffleStatus::Drawing, false),
+        (RaffleStatus::Failed, RaffleStatus::Finalized, false),
+        (RaffleStatus::Failed, RaffleStatus::Cancelled, false),
+        (RaffleStatus::Failed, RaffleStatus::Failed, false),
+        (RaffleStatus::Failed, RaffleStatus::Claimed, false),
+        // From Claimed (terminal)
+        (RaffleStatus::Claimed, RaffleStatus::PendingPrize, false),
+        (RaffleStatus::Claimed, RaffleStatus::Active, false),
+        (RaffleStatus::Claimed, RaffleStatus::Drawing, false),
+        (RaffleStatus::Claimed, RaffleStatus::Finalized, false),
+        (RaffleStatus::Claimed, RaffleStatus::Cancelled, false),
+        (RaffleStatus::Claimed, RaffleStatus::Failed, false),
+        (RaffleStatus::Claimed, RaffleStatus::Claimed, false),
+    ];
+
+    /// Hardcoded expected matrix for can_internal_revert_to.
+    /// Internal rollback is only legal from Drawing to Active.
+    const EXPECTED_INTERNAL_REVERTS: [(RaffleStatus, RaffleStatus, bool); 49] = [
+        // From PendingPrize
+        (RaffleStatus::PendingPrize, RaffleStatus::PendingPrize, false),
+        (RaffleStatus::PendingPrize, RaffleStatus::Active, false),
+        (RaffleStatus::PendingPrize, RaffleStatus::Drawing, false),
+        (RaffleStatus::PendingPrize, RaffleStatus::Finalized, false),
+        (RaffleStatus::PendingPrize, RaffleStatus::Cancelled, false),
+        (RaffleStatus::PendingPrize, RaffleStatus::Failed, false),
+        (RaffleStatus::PendingPrize, RaffleStatus::Claimed, false),
+        // From Active
+        (RaffleStatus::Active, RaffleStatus::PendingPrize, false),
+        (RaffleStatus::Active, RaffleStatus::Active, false),
+        (RaffleStatus::Active, RaffleStatus::Drawing, false),
+        (RaffleStatus::Active, RaffleStatus::Finalized, false),
+        (RaffleStatus::Active, RaffleStatus::Cancelled, false),
+        (RaffleStatus::Active, RaffleStatus::Failed, false),
+        (RaffleStatus::Active, RaffleStatus::Claimed, false),
+        // From Drawing (only Drawing -> Active internal revert is allowed)
+        (RaffleStatus::Drawing, RaffleStatus::PendingPrize, false),
+        (RaffleStatus::Drawing, RaffleStatus::Active, true),
+        (RaffleStatus::Drawing, RaffleStatus::Drawing, false),
+        (RaffleStatus::Drawing, RaffleStatus::Finalized, false),
+        (RaffleStatus::Drawing, RaffleStatus::Cancelled, false),
+        (RaffleStatus::Drawing, RaffleStatus::Failed, false),
+        (RaffleStatus::Drawing, RaffleStatus::Claimed, false),
+        // From Finalized
+        (RaffleStatus::Finalized, RaffleStatus::PendingPrize, false),
+        (RaffleStatus::Finalized, RaffleStatus::Active, false),
+        (RaffleStatus::Finalized, RaffleStatus::Drawing, false),
+        (RaffleStatus::Finalized, RaffleStatus::Finalized, false),
+        (RaffleStatus::Finalized, RaffleStatus::Cancelled, false),
+        (RaffleStatus::Finalized, RaffleStatus::Failed, false),
+        (RaffleStatus::Finalized, RaffleStatus::Claimed, false),
+        // From Cancelled
+        (RaffleStatus::Cancelled, RaffleStatus::PendingPrize, false),
+        (RaffleStatus::Cancelled, RaffleStatus::Active, false),
+        (RaffleStatus::Cancelled, RaffleStatus::Drawing, false),
+        (RaffleStatus::Cancelled, RaffleStatus::Finalized, false),
+        (RaffleStatus::Cancelled, RaffleStatus::Cancelled, false),
+        (RaffleStatus::Cancelled, RaffleStatus::Failed, false),
+        (RaffleStatus::Cancelled, RaffleStatus::Claimed, false),
+        // From Failed
+        (RaffleStatus::Failed, RaffleStatus::PendingPrize, false),
+        (RaffleStatus::Failed, RaffleStatus::Active, false),
+        (RaffleStatus::Failed, RaffleStatus::Drawing, false),
+        (RaffleStatus::Failed, RaffleStatus::Finalized, false),
+        (RaffleStatus::Failed, RaffleStatus::Cancelled, false),
+        (RaffleStatus::Failed, RaffleStatus::Failed, false),
+        (RaffleStatus::Failed, RaffleStatus::Claimed, false),
+        // From Claimed
+        (RaffleStatus::Claimed, RaffleStatus::PendingPrize, false),
+        (RaffleStatus::Claimed, RaffleStatus::Active, false),
+        (RaffleStatus::Claimed, RaffleStatus::Drawing, false),
+        (RaffleStatus::Claimed, RaffleStatus::Finalized, false),
+        (RaffleStatus::Claimed, RaffleStatus::Cancelled, false),
+        (RaffleStatus::Claimed, RaffleStatus::Failed, false),
+        (RaffleStatus::Claimed, RaffleStatus::Claimed, false),
+    ];
+
     #[test]
     fn terminal_states_have_no_outgoing_transitions() {
         for status in [RaffleStatus::Cancelled, RaffleStatus::Failed, RaffleStatus::Claimed] {
@@ -792,5 +938,99 @@ mod raffle_status_tests {
     fn pending_prize_only_moves_to_active() {
         assert!(RaffleStatus::PendingPrize.can_transition_to(RaffleStatus::Active));
         assert!(!RaffleStatus::PendingPrize.can_transition_to(RaffleStatus::Drawing));
+    }
+
+    #[test]
+    fn exhaustive_transition_matrix_enumerates_every_pair() {
+        let all = RaffleStatus::all();
+
+        // 1. Compile-time & runtime exhaustiveness check for all variants
+        for &status in all {
+            assert_all_variants_handled(status);
+        }
+
+        // 2. Cardinality assertion: total pairs must equal all.len() * all.len()
+        let expected_count = all.len() * all.len();
+        assert_eq!(
+            EXPECTED_TRANSITIONS.len(),
+            expected_count,
+            "EXPECTED_TRANSITIONS must contain exactly all.len() * all.len() pairs; updating variants requires updating the matrix"
+        );
+
+        // 3. Assert every (from, to) pair in the matrix against can_transition_to
+        for &(from, to, expected) in EXPECTED_TRANSITIONS.iter() {
+            assert_eq!(
+                from.can_transition_to(to),
+                expected,
+                "can_transition_to({:?}, {:?}) expected {}, got {}",
+                from,
+                to,
+                expected,
+                from.can_transition_to(to),
+            );
+        }
+
+        // 4. Assert that every (from, to) from the cross product exists exactly once in EXPECTED_TRANSITIONS
+        for &from in all {
+            for &to in all {
+                let occurrences = EXPECTED_TRANSITIONS
+                    .iter()
+                    .filter(|&&(f, t, _)| f == from && t == to)
+                    .count();
+                assert_eq!(
+                    occurrences,
+                    1,
+                    "Expected exactly 1 transition entry for pair ({:?}, {:?}), found {}",
+                    from,
+                    to,
+                    occurrences
+                );
+            }
+        }
+    }
+
+    #[test]
+    fn exhaustive_internal_revert_matrix_enumerates_every_pair() {
+        let all = RaffleStatus::all();
+
+        for &status in all {
+            assert_all_variants_handled(status);
+        }
+
+        let expected_count = all.len() * all.len();
+        assert_eq!(
+            EXPECTED_INTERNAL_REVERTS.len(),
+            expected_count,
+            "EXPECTED_INTERNAL_REVERTS must contain exactly all.len() * all.len() pairs; updating variants requires updating the matrix"
+        );
+
+        for &(from, to, expected) in EXPECTED_INTERNAL_REVERTS.iter() {
+            assert_eq!(
+                from.can_internal_revert_to(to),
+                expected,
+                "can_internal_revert_to({:?}, {:?}) expected {}, got {}",
+                from,
+                to,
+                expected,
+                from.can_internal_revert_to(to),
+            );
+        }
+
+        for &from in all {
+            for &to in all {
+                let occurrences = EXPECTED_INTERNAL_REVERTS
+                    .iter()
+                    .filter(|&&(f, t, _)| f == from && t == to)
+                    .count();
+                assert_eq!(
+                    occurrences,
+                    1,
+                    "Expected exactly 1 internal revert entry for pair ({:?}, {:?}), found {}",
+                    from,
+                    to,
+                    occurrences
+                );
+            }
+        }
     }
 }

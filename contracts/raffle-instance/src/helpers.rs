@@ -20,23 +20,49 @@ pub(crate) fn write_raffle(env: &Env, raffle: &Raffle) {
     env.storage().instance().set(&DataKey::Raffle, raffle);
 }
 
+/// Re-draw a winning ticket index so the tier is won by an address that has
+/// not already won an earlier tier.
+///
+/// # Why not linear probing
+///
+/// Walking forward from the originally drawn index (`candidate + 1`,
+/// `candidate + 2`, …) until an owner that has not won turns up made every
+/// collision land on the ticket immediately after the colliding one. With a
+/// small participant set and several tiers the holder just past a repeat
+/// winner was therefore systematically over-represented, while ticket 0 was
+/// the least likely of all (#991).
+///
+/// Instead this rejection-samples a fresh index from an LCG stream
+/// domain-separated by `seed` and `tier_index`, so the accepted ticket is
+/// uniform over the tickets whose owner has not yet won. `seed` and
+/// `tier_index` are both load-bearing: no argument is accepted and ignored.
+///
+/// # Fallback
+///
+/// At most `OracleSeedWinnerSelection::MAX_REDRAW_ATTEMPTS` fresh samples are
+/// taken. If they are exhausted — which requires that no acceptable ticket
+/// exists, i.e. every ticket already belongs to an existing winner — the
+/// originally drawn `candidate` is returned so the draw still terminates.
 fn resolve_unique_winner(
     env: &Env,
-    _seed: u64,
-    _tier_index: u32,
+    seed: u64,
+    tier_index: u32,
     total_tickets: u32,
     winners: &Vec<Address>,
     candidate: u32,
 ) -> u32 {
-    for offset in 0..total_tickets {
-        let index = (candidate + offset) % total_tickets;
-        if let Some(owner) = get_ticket_owner(env, index + 1) {
-            if !winners.iter().any(|winner| winner == owner) {
-                return index;
-            }
-        }
-    }
-    candidate
+    OracleSeedWinnerSelection::new(seed).resample_unique_index(
+        tier_index,
+        total_tickets,
+        candidate,
+        |index| match get_ticket_owner(env, index + 1) {
+            // A ticket with no on-chain record cannot be paid out, so it is
+            // never acceptable; the caller surfaces `Error::TicketNotFound`
+            // against the index that is finally used.
+            Some(owner) => !winners.iter().any(|winner| winner == owner),
+            None => false,
+        },
+    )
 }
 
 /// Number of persistent ticket entries refreshed per hot-path call.
@@ -319,24 +345,7 @@ pub(crate) fn require_not_paused(env: &Env) -> Result<(), Error> {
 /// Blocks ticket purchases (and other guarded ops) while the protocol-wide
 /// **global pause** is engaged.
 ///
-/// This intentionally consults the factory's `is_global_paused` flag — the one
-/// toggled by `emergency_pause_all` / `emergency_unpause_all`. That is the
-/// single switch that halts every deployed instance at once, which is why an
-/// `emergency_pause_all` call stops ticket purchases here even though this
-/// contract was already deployed.
-///
-/// It does **not** consult the factory's `DataKey::Paused` (`pause_factory`)
-/// or `DataKey::CreationPaused` (`set_creation_paused`) flags: `pause_factory`
-/// only stops new activity at the factory level and `set_creation_paused` only
-/// blocks `create_raffle`. Neither reaches existing instances by design.
-///
-/// Precedence (highest to lowest, factory-side):
-///   1. global pause  (`emergency_pause_all`)   → blocks everything, all instances
-///   2. factory pause  (`pause_factory`)         → blocks factory-level ops only
-///   3. creation pause (`set_creation_paused`)   → blocks `create_raffle` only
-///
-/// See `contracts/raffle-factory/src/pause.rs` for the authoritative table and
-/// `docs/ARCHITECTURE.md` / `oracle/RUNBOOK.md` for the incident-response call.
+/// See [`docs/ARCHITECTURE.md`](../../../docs/ARCHITECTURE.md) for the authoritative pause-flag precedence table and incident response.
 pub(crate) fn require_global_not_paused(env: &Env) -> Result<(), Error> {
     let factory: Address = env
         .storage()
@@ -415,6 +424,7 @@ pub(crate) fn build_internal_seed_u64(env: &Env) -> u64 {
     let xdr = (
         env.ledger().timestamp(),
         env.ledger().sequence(),
+        env.ledger().network_id(),
         env.current_contract_address(),
     )
         .to_xdr(env);

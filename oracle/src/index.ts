@@ -3,6 +3,7 @@ import { loadAndValidateConfig } from './config';
 import { startHealthServer } from './health/health.server';
 import { configureLogger, logger } from './logging/logger';
 import { createPipeline } from './composition-root';
+import { OraclePipeline } from './pipeline';
 
 /**
  * Bootstrap entry point. Wires the full oracle pipeline and exposes /health and
@@ -17,7 +18,12 @@ async function main(): Promise<void> {
     rateLimitMs: config.alertRateLimitMs,
   });
 
-  const healthServer = startHealthServer({ port: config.healthPort });
+  const pipeline = await createPipeline(config, { alerter });
+
+  const healthServer = startHealthServer({
+    port: config.healthPort,
+    healthCheck: () => createHealthSnapshot(pipeline),
+  });
 
   if (!alerter.enabled) {
     logger.warn('ALERT_WEBHOOK_URL is not set; operational alerts are disabled.');
@@ -29,8 +35,6 @@ async function main(): Promise<void> {
       details: { rpcUrl: config.rpcUrl, pollIntervalMs: config.pollIntervalMs },
     });
   }
-
-  const pipeline = await createPipeline(config, { alerter });
 
   const shutdown = (): void => {
     void pipeline.shutdown().finally(() => {
@@ -49,6 +53,33 @@ async function main(): Promise<void> {
   });
 
   await pipeline.start([config.factoryContractId]);
+}
+
+function createHealthSnapshot(pipeline: OraclePipeline): {
+  status: 'ok' | 'degraded';
+  queueDepth: number;
+  deadLetterDepth: number;
+  oldestQueuedAgeMs: number | null;
+  timestamp: number;
+} {
+  const queue = (pipeline as any).requestQueue;
+  const deadLetterStore = (pipeline as any).deadLetterStore;
+  const config = (pipeline as any).config;
+
+  const queueDepth = queue.size();
+  const deadLetterDepth = deadLetterStore.size();
+  const oldestQueuedAgeMs = queue.oldestAgeMs();
+
+  const degraded =
+    queueDepth > config.alertQueueDepthLimit || deadLetterDepth >= 1;
+
+  return {
+    status: degraded ? 'degraded' : 'ok',
+    queueDepth,
+    deadLetterDepth,
+    oldestQueuedAgeMs,
+    timestamp: Date.now(),
+  };
 }
 
 main().catch((error: unknown) => {
