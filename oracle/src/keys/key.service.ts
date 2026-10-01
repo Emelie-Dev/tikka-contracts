@@ -10,11 +10,10 @@ export interface SecretsAdapter {
  * Adapter for loading secrets from environment variables.
  */
 export class EnvSecretsAdapter implements SecretsAdapter {
+  constructor(private readonly environment: Record<string, string | undefined> = {}) {}
+
   async getSecret(key: string): Promise<Buffer> {
-    if (process.env['NODE_ENV'] === 'production') {
-      throw new Error('Security violation: EnvSecretsAdapter is not allowed in production environment');
-    }
-    const secret = process.env[key];
+    const secret = this.environment[key];
     if (!secret) {
       throw new Error(`${key} env var not set`);
     }

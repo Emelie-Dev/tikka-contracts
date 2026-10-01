@@ -348,7 +348,6 @@ Topic: `tikka:recurring_raffle_created`
 | `creator` | `Address` |  | Creator that owns the recurring schedule. |
 | `interval_seconds` | `u64` |  | Seconds between consecutive rounds. |
 | `max_rounds` | `u32` |  | Maximum number of rounds; `0` means unlimited. |
-| `auto_fund` | `bool` |  | Whether prize funding for each round happens automatically. |
 | `next_due` | `u64` |  | Ledger timestamp of the next scheduled round. |
 | `timestamp` | `u64` |  | Ledger timestamp of the schedule creation. |
 

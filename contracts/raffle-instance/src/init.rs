@@ -20,9 +20,9 @@
 //!                                                  ticket sales open
 //! ```
 //!
-//! See [`docs/RANDOMNESS.md`](../../../../docs/RANDOMNESS.md) for a full
+//! See [`docs/RANDOMNESS.md`](../../../docs/RANDOMNESS.md) for a full
 //! explanation of the three randomness modes that can be configured here, and
-//! [`docs/EVENTS.md`](../../../../docs/EVENTS.md) for the events emitted by
+//! [`docs/EVENTS.md`](../../../docs/EVENTS.md) for the events emitted by
 //! these functions.
 
 use soroban_sdk::{token, Address, Env};
@@ -222,7 +222,7 @@ pub(crate) fn init(
 /// - [`events::RaffleStatusChanged`] — records the `PendingPrize → Active`
 ///   transition.
 ///
-/// See also: [`docs/EVENTS.md`](../../../../docs/EVENTS.md) — `PrizeDeposited`,
+/// See also: [`docs/EVENTS.md`](../../../docs/EVENTS.md) — `PrizeDeposited`,
 /// `RaffleStatusChanged`.
 pub(crate) fn deposit_prize(env: Env) -> Result<(), Error> {
     require_not_paused(&env)?;

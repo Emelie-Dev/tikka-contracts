@@ -17,7 +17,7 @@ export class GcpSecretsAdapter {
 export class VaultSecretsAdapter {
   constructor(
     private readonly vaultAddr: string,
-    private readonly token: string = process.env.VAULT_TOKEN ?? ''
+    private readonly token: string
   ) {}
 
   async getSecret(secretPath: string): Promise<Buffer> {
@@ -34,10 +34,7 @@ export class VaultSecretsAdapter {
     }
     const data = (await response.json()) as any;
     const value =
-      data.data?.data?.value ??
-      data.data?.value ??
-      data.value ??
-      data.data?.ORACLE_SECRET_KEY;
+      data.data?.data?.value ?? data.data?.value ?? data.value ?? data.data?.ORACLE_SECRET_KEY;
     if (!value) {
       throw new Error(`Secret not found in Vault payload at path: ${secretPath}`);
     }
@@ -57,4 +54,3 @@ export class AwsKmsSecretsAdapter {
     throw new Error('AWS KMS / Secrets Manager adapter not fully implemented');
   }
 }
-
