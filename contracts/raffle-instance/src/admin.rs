@@ -88,7 +88,7 @@ pub(crate) fn set_admin(env: Env, new_admin: Address) -> Result<(), Error> {
     Ok(())
 }
 
-pub(crate) fn update_oracle_address(env: Env, new_oracle: Address) -> Result<(), Error> {
+pub(crate) fn update_oracle_address(env: Env, new_oracle: Address, new_public_key: Option<BytesN<32>>) -> Result<(), Error> {
     let admin = require_admin(&env)?;
     let mut raffle = read_raffle(&env)?;
     if raffle.randomness_source != raffle_shared::RandomnessSource::External {
@@ -105,6 +105,11 @@ pub(crate) fn update_oracle_address(env: Env, new_oracle: Address) -> Result<(),
     }
     let old = raffle.oracle_address.clone();
     raffle.oracle_address = Some(new_oracle.clone());
+    // FIX(#985): rotate the registered public key atomically with the address.
+    // Failing to do so would leave the old key in place while a new oracle is
+    // registered, allowing the old oracle key to continue passing the binding
+    // check in provide_randomness.
+    raffle.oracle_public_key = new_public_key;
     write_raffle(&env, &raffle);
     OracleAddressUpdated {
         old_oracle: old,

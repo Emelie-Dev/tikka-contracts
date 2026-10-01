@@ -1,6 +1,8 @@
 name: Fuzz
 
 on:
+  pull_request:
+    branches: [ "master" ]
   schedule:
     # Nightly at 02:00 UTC
     - cron: '0 2 * * *'
@@ -19,19 +21,10 @@ env:
   FUZZ_MAX_TIME: 1800
 
 jobs:
-  fuzz:
-    name: Fuzz ${{ matrix.target }}
+  fuzz_check:
+    name: Fuzz targets compile check
     runs-on: ubuntu-latest
-    strategy:
-      fail-fast: false
-      matrix:
-        target:
-          - fuzz_buy_ticket
-          - fuzz_finalize_raffle
-          - fuzz_winner_selection
-          - fuzz_refund_cancel
-          - fuzz_commit_reveal
-
+    timeout-minutes: 15
     steps:
       - uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7.0.1
 
@@ -39,6 +32,45 @@ jobs:
         uses: dtolnay/rust-toolchain@6c977a6ca4077a0ceb28ffbe03f59d46e9ac8772 # stable
         with:
           toolchain: nightly
+
+      - name: Rust Cache
+        uses: Swatinem/rust-cache@9d47c6ad4b02e050fd481d890b2ea34778fd09d6 # v2.7.8
+        with:
+          workspaces: fuzz
+
+      - name: Install cargo-fuzz
+        run: cargo install cargo-fuzz --locked
+
+      - name: Check fuzz targets compile
+        working-directory: fuzz
+        run: cargo fuzz build
+
+  fuzz:
+    name: Fuzz ${{ matrix.target }}
+    runs-on: ubuntu-latest
+    timeout-minutes: 45
+    strategy:
+      fail-fast: false
+      matrix:
+        # Keep this list in sync with the [[bin]] entries in fuzz/Cargo.toml.
+        # The Makefile derives the list automatically; CI enumerates it here
+        # so each target gets its own job, corpus cache, and crash artifact.
+        target:
+          - fuzz_buy_ticket
+          - fuzz_finalize_raffle
+          - fuzz_winner_selection
+          - fuzz_refund_cancel
+          - fuzz_commit_reveal
+          - fuzz_lifecycle
+
+    steps:
+      - uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7.0.1
+
+      - name: Set up Rust (nightly, required for cargo-fuzz)
+        run: |
+          rustup toolchain install nightly
+          rustup default nightly
+          rustup show
 
       - name: Rust Cache
         uses: Swatinem/rust-cache@9d47c6ad4b02e050fd481d890b2ea34778fd09d6 # v2.7.8

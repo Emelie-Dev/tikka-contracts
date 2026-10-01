@@ -1,5 +1,14 @@
 #![cfg(test)]
 
+// ── Canonical shared imports for all factory test submodules ─────────────────
+//
+// Every item imported here is available to child modules via `use super::*`.
+// Do NOT add a second `use raffle_shared` or `use soroban_sdk` block in any
+// child module — that is the duplicate-import pattern that caused E0252 (#982).
+//
+// If a child module needs an additional item, add it to the relevant block
+// below rather than opening a new block in that child file.
+
 use crate::*;
 use raffle_shared::{
     constants::MAX_INTERNAL_RANDOMNESS_PRIZE_AMOUNT, DEFAULT_PAGE_LIMIT,
@@ -186,7 +195,6 @@ pub fn recurring_config(_env: &Env, base: RaffleConfig) -> RecurringRaffleConfig
         base_config: base,
         interval_seconds: 86_400,
         max_rounds: 3,
-        auto_fund: false,
     }
 }
 

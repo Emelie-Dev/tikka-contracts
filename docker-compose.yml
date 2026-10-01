@@ -11,7 +11,7 @@ services:
     
     # Data persistence: ledger checkpoint and deduplication store
     volumes:
-      - oracle_data:/usr/src/app/data
+      - oracle_data:/app/data
     
     # Container ports for health and metrics endpoints
     ports:

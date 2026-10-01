@@ -148,9 +148,13 @@ pub(crate) fn init_bounds_env() -> (Env, Address, Address, Address, Address, Add
 
 
 pub mod budget;
-pub mod fairness;
+pub mod claim;
+pub mod claim_state;
 pub mod draw;
+pub mod fairness;
+pub mod init;
 pub mod invariants;
+pub mod tickets;
 pub mod ttl;
 pub mod claim_state;
 pub mod claim;

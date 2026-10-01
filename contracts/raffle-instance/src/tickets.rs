@@ -31,7 +31,7 @@
 //! max_tickets`), `buy_tickets` calls [`transition_to_drawing`] and, for
 //! `External` randomness, calls [`request_randomness`] to notify the oracle.
 //!
-//! See [`docs/RANDOMNESS.md`](../../../../docs/RANDOMNESS.md) for the full
+//! See [`docs/RANDOMNESS.md`](../../../docs/RANDOMNESS.md) for the full
 //! description of each randomness mode.
 
 use soroban_sdk::{
@@ -119,7 +119,7 @@ use crate::{CommitRevealEntry, DataKey, Error, Raffle, RaffleStatus};
 /// - [`events::RandomnessRequested`] — emitted when `External` randomness is
 ///   requested after a sell-out.
 ///
-/// See also: [`docs/EVENTS.md`](../../../../docs/EVENTS.md) —
+/// See also: [`docs/EVENTS.md`](../../../docs/EVENTS.md) —
 /// `TicketPurchased`, `DrawTriggered`, `RandomnessRequested`.
 fn validate_purchase_preconditions(env: &Env, raffle: &Raffle, quantity: u32) -> Result<(), Error> {
     //  1. Validate inputs
@@ -662,9 +662,9 @@ pub(crate) fn buy_tickets_for(env: Env, buyer: Address, recipient: Address, quan
 /// - [`Error::InvalidStatus`] — raffle is not `Active` or `Drawing`.
 /// - [`Error::TicketNotFound`] — no ticket with `ticket_id` exists in storage.
 ///
-/// See also: [`docs/RANDOMNESS.md`](../../../../docs/RANDOMNESS.md) —
+/// See also: [`docs/RANDOMNESS.md`](../../../docs/RANDOMNESS.md) —
 /// Commit-Reveal mode,
-/// [`docs/COMMIT_REVEAL.md`](../../../../docs/COMMIT_REVEAL.md).
+/// [`docs/COMMIT_REVEAL.md`](../../../docs/COMMIT_REVEAL.md).
 pub(crate) fn submit_commit(env: Env, ticket_id: u32, hash: BytesN<32>) -> Result<(), Error> {
     let raffle = crate::read_raffle(&env)?;
 

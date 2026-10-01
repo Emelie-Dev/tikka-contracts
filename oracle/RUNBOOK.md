@@ -41,10 +41,10 @@ docker-compose ps
 # View logs
 docker-compose logs -f oracle
 
-# Check health endpoint
+# Check health endpoint (returns {"status":"ok"})
 curl http://localhost:9090/health
 
-# View metrics
+# View metrics (Prometheus text format)
 curl http://localhost:9090/metrics
 ```
 
@@ -78,7 +78,7 @@ The oracle service maintains two critical files in the `/data` volume:
 
 ### Volume mount configuration
 
-The `docker-compose.yml` mounts a named volume `oracle_data` at `/usr/src/app/data`:
+The `docker-compose.yml` mounts a named volume `oracle_data` at `/app/data`:
 
 ```yaml
 volumes:
@@ -86,7 +86,9 @@ volumes:
     driver: local
 ```
 
-This ensures data persists across container restarts, upgrades, and removals. For Kubernetes deployments, mount a persistent volume claim at `/data`.
+This path matches the container's `WORKDIR /app` and is pre-created with `node`-user ownership in the Dockerfile (`RUN mkdir -p /app/data && chown node:node /app/data`), so the service can write state files without root privileges.
+
+To change the location, set `DATA_DIR` in your `.env` file to the desired absolute or relative path and update the volume mount target in `docker-compose.yml` to match. For Kubernetes deployments, mount a persistent volume claim at the same path.
 
 ## Health and Metrics Endpoints
 
@@ -277,6 +279,7 @@ The oracle service requires the following environment variables:
 
 Optional configuration:
 
+- `DATA_DIR`: Directory for persistent state files (`checkpoint.json` and `dedup.json`). Resolved to an absolute path at startup. In Docker this is the `oracle_data` named volume mounted at `/app/data`. **If this directory is not persisted across restarts the oracle resumes from the current ledger and will miss any `RandomnessRequested` events that arrived while it was down.** (default: `./data`)
 - `LOG_LEVEL`: Logging verbosity (`debug`, `info`, `warn`, `error`; default: `info`)
 - `POLL_INTERVAL_MS`: Event polling interval in milliseconds (default: 5000)
 - `HEALTH_PORT`: Port for `/health` and `/metrics` (default: 9090)

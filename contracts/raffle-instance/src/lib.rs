@@ -91,6 +91,16 @@ pub struct Raffle {
     pub winners: Vec<Winner>,
     pub randomness_source: RandomnessSource,
     pub oracle_address: Option<Address>,
+    /// Ed25519 public key that the registered oracle must sign VRF proofs with.
+    /// Persisted alongside `oracle_address` so that `provide_randomness` can
+    /// bind the submitted `public_key` argument to the key that was registered
+    /// at init (or last rotated by `update_oracle_address`).  Only meaningful
+    /// when `randomness_source == External`; `None` for all other modes.
+    ///
+    /// Fix for #985: without this field the signature check in
+    /// `provide_randomness` only proved "this proof matches THIS key", not
+    /// "this key belongs to the oracle this raffle trusts".
+    pub oracle_public_key: Option<BytesN<32>>,
     pub protocol_fee_bp: u32,
     pub treasury_address: Option<Address>,
     pub swap_router: Option<Address>,
@@ -155,6 +165,11 @@ pub enum DataKey {
     QuorumSeed(Address),
     QuorumSubmittedOracles,
     MetadataHash,
+    /// Persisted Ed25519 public key for the registered VRF oracle (#985).
+    /// Stored separately from `Raffle` so it can be rotated atomically with
+    /// `oracle_address` by `update_oracle_address` without deserialising the
+    /// full raffle struct.
+    OraclePublicKey,
     /// Cursor for the amortised ticket-TTL rolling window in
     /// `helpers::bump_raffle_ttl` (#1010). Instance tier; not consensus-critical.
     LastBumpedIndex,
@@ -220,6 +235,9 @@ pub enum Error {
     OracleNotRegistered = 68,
     DuplicateOracleSubmission = 69,
     CommitAlreadySubmitted = 70,
+    /// The Ed25519 public key submitted to `provide_randomness` does not match
+    /// the key registered for this raffle's oracle (#985).
+    OraclePublicKeyMismatch = 71,
 }
 
 /// Returns the effective per-address ticket cap, if any.
@@ -455,6 +473,7 @@ if config.randomness_source == RandomnessSource::External {
             winners: Vec::new(&env),
             randomness_source: config.randomness_source.clone(),
             oracle_address: config.oracle_address,
+            oracle_public_key: config.oracle_public_key,
             protocol_fee_bp: config.protocol_fee_bp,
             treasury_address: config.treasury_address,
             swap_router: config.swap_router,
@@ -531,6 +550,14 @@ if config.randomness_source == RandomnessSource::External {
         result
     }
 
+    /// Advance a raffle out of `Active` once it is contractually over.
+    ///
+    /// Permissionless: any address may call this, but only after
+    /// `time_ended || tickets_full` holds. Before that it reverts with
+    /// `InvalidStateTransition`, so a raffle can never be finalized early.
+    /// Finalizing is idempotent with respect to the draw itself — the first
+    /// successful call takes `DrawingLock` and later calls revert with
+    /// `InvalidStatus`. #1000
     pub fn finalize_raffle(env: Env) -> Result<(), Error> {
         let result = draw::finalize_raffle(env.clone());
         #[cfg(any(test, feature = "testutils"))]
@@ -657,7 +684,7 @@ if config.randomness_source == RandomnessSource::External {
                 }
             }
 
-            let aggregate = randomness::aggregate_quorum_seeds(&env, &seeds);
+            let aggregate = randomness::aggregate_quorum_seeds(&env, request_id, &seeds);
             helpers::do_finalize_with_seed(&env, raffle, aggregate, RandomnessType::Quorum, Some(seeds))?;
         }
 
@@ -783,7 +810,7 @@ if config.randomness_source == RandomnessSource::External {
     /// Only available in `Finalized` or `Claimed` states; returns `InvalidStatus`
     /// otherwise.
     ///
-    /// See [`docs/RANDOMNESS.md`] for the verification procedure.
+    /// See [`docs/RANDOMNESS.md`](../../../docs/RANDOMNESS.md) for the verification procedure.
     pub fn get_draw_attestation(
         env: Env,
     ) -> Result<attestation::DrawAttestation, Error> {
@@ -897,8 +924,8 @@ if config.randomness_source == RandomnessSource::External {
         result
     }
 
-    pub fn update_oracle_address(env: Env, new_oracle: Address) -> Result<(), Error> {
-        let result = admin::update_oracle_address(env.clone(), new_oracle);
+    pub fn update_oracle_address(env: Env, new_oracle: Address, new_public_key: Option<BytesN<32>>) -> Result<(), Error> {
+        let result = admin::update_oracle_address(env.clone(), new_oracle, new_public_key);
         #[cfg(any(test, feature = "testutils"))]
         assert_solvent_after_success(&env, &result);
         result

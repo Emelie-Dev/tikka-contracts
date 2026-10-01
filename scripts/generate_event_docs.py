@@ -1,20 +1,19 @@
 #!/usr/bin/env python3
-"""
-Deterministically generate `docs/EVENTS.md` from the source of truth.
+"""Deterministically generate ``docs/EVENTS.md`` from the source of truth.
 
-The source of truth for the event catalog is the `#[contractevent]` struct
+The source of truth for the event catalog is the ``#[contractevent]`` struct
 definitions in:
 
     contracts/raffle-shared/src/events.rs
     contracts/raffle-factory/src/events.rs
     contracts/raffle-instance/src/events.rs
 
-Every event struct and every field carries a `///` doc comment.  This script:
+Every event struct and every field carries a ``///`` doc comment.  This script:
 
-* parses those structs (plus the `///` docs),
+* parses those structs (plus the ``///`` docs),
 * resolves which contract functions actually emit each event (by scanning the
-  crate sources for `<EventName> { ... }.publish(...)` call sites),
-* writes the generated markdown to `docs/EVENTS.md`.
+  crate sources for ``<EventName> { ... }.publish(...)`` call sites),
+* writes the generated markdown to ``docs/EVENTS.md``.
 
 The output is deterministic: for a fixed repository state the generated file
 is byte-identical every run, so it can be diffed in CI.
@@ -22,6 +21,8 @@ is byte-identical every run, so it can be diffed in CI.
 Usage:
     python scripts/generate_event_docs.py
 """
+
+from __future__ import annotations
 
 import re
 import sys
@@ -31,7 +32,7 @@ REPO_ROOT = Path(__file__).resolve().parent.parent
 DOCS = REPO_ROOT / "docs"
 
 # Crate metadata: (src dir relative to repo root, markdown section title).
-CRATES = [
+CRATES: list[tuple[str, str]] = [
     ("contracts/raffle-factory/src", "Factory Contract Events"),
     ("contracts/raffle-instance/src", "Instance Contract Events"),
     ("contracts/raffle-shared/src", "Shared Events"),
@@ -39,13 +40,13 @@ CRATES = [
 
 # Shared events are re-exported (not defined) in these crates; their emitters
 # live there too.
-SHARED_EMITTER_SRC = [
+SHARED_EMITTER_SRC: list[str] = [
     "contracts/raffle-factory/src",
     "contracts/raffle-instance/src",
 ]
 
 # Files that are never scanned for emitters.
-SKIP_FILES = {"events.rs", "test.rs"}
+SKIP_FILES: frozenset[str] = frozenset({"events.rs", "test.rs"})
 
 STRUCT_RE = re.compile(
     r"^(///[^\n]*\n)+(?:\s*#[^\n]*\n)*pub struct (\w+)\s*\{(.*?)^\}",
@@ -56,8 +57,8 @@ DOC_RE = re.compile(r"^\s*/// ?(.*)$")
 FUNC_RE = re.compile(r"\bfn\s+(\w+)\s*\(")
 
 
-def parse_structs(source: str):
-    """Parse `pub struct` event definitions with their doc comments.
+def parse_structs(source: str) -> list[dict]:
+    """Parse ``pub struct`` event definitions with their doc comments.
 
     Returns a list of dicts:
         {"name", "doc": [str], "fields": [{"name", "type", "doc", "topic"}]}
@@ -67,15 +68,15 @@ def parse_structs(source: str):
         name = match.group(2)
         # Event-level doc comment: the leading `///` lines of the matched
         # block, stopping at the first non-doc line (attributes / struct).
-        doc = []
+        doc: list[str] = []
         for line in match.group(0).splitlines():
             doc_m = DOC_RE.match(line)
             if doc_m:
                 doc.append(doc_m.group(1).strip())
             elif doc:
                 break
-        fields = []
-        cur_doc = []
+        fields: list[dict] = []
+        cur_doc: list[str] = []
         for line in match.group(3).splitlines():
             doc_m = DOC_RE.match(line)
             if doc_m:
@@ -96,10 +97,10 @@ def parse_structs(source: str):
     return events
 
 
-def collect_field_topics(source: str):
-    """Return {struct_name: set(field_name, ...)} annotated with `#[topic]`."""
-    result = {}
-    cur_struct = None
+def collect_field_topics(source: str) -> dict[str, set[str]]:
+    """Return {struct_name: set(field_name, ...)} annotated with ``#[topic]``."""
+    result: dict[str, set[str]] = {}
+    cur_struct: str | None = None
     lines = source.splitlines()
     i = 0
     while i < len(lines):
@@ -123,9 +124,9 @@ def collect_field_topics(source: str):
     return result
 
 
-def find_functions(source: str):
-    """Return list of (name, body_start, body_end_inclusive) via brace matching."""
-    functions = []
+def find_functions(source: str) -> list[tuple[str, int, int]]:
+    """Return list of (name, body_start, body_end_exclusive) via brace matching."""
+    functions: list[tuple[str, int, int]] = []
     for m in FUNC_RE.finditer(source):
         name = m.group(1)
         # Match the parameter-list parens (handles nested generics/tuples).
@@ -158,9 +159,9 @@ def find_functions(source: str):
     return functions
 
 
-def find_emitters(src_dir: Path, event_name: str):
-    """Return a sorted list of function names that publish `event_name`."""
-    emitters = set()
+def find_emitters(src_dir: Path, event_name: str) -> list[str]:
+    """Return a sorted list of function names that publish ``event_name``."""
+    emitters: set[str] = set()
     for rs in sorted(src_dir.glob("*.rs")):
         if rs.name in SKIP_FILES:
             continue
@@ -177,16 +178,16 @@ def find_emitters(src_dir: Path, event_name: str):
                 elif source[j] == "}":
                     depth -= 1
                 j += 1
-            if ".publish" not in source[j: j + 40]:
+            if ".publish" not in source[j : j + 40]:
                 continue
-            for (name, start, end) in functions:
+            for name, start, end in functions:
                 if start <= lit.start() < end:
                     emitters.add(name)
                     break
     return sorted(emitters)
 
 
-def md_table(fields):
+def md_table(fields: list[dict]) -> str:
     lines = [
         "| Field | Type | Flags | Description |",
         "|-------|------|-------|-------------|",
@@ -203,7 +204,8 @@ def camel_to_snake(name: str) -> str:
 
 
 def build_header() -> str:
-    return f"""# Raffle Contract Events
+    return """\
+# Raffle Contract Events
 
 This document is **auto-generated** from the `#[contractevent]` struct
 definitions in `contracts/*/src/events.rs`. **Do not edit by hand.**
@@ -245,13 +247,16 @@ To avoid the drift that silently breaks indexers:
 """
 
 
-def main():
+def main() -> None:
     sections = []
     for src_rel, title in CRATES:
         src_dir = REPO_ROOT / src_rel
         events_file = src_dir / "events.rs"
         if not events_file.exists():
-            print(f"Error: expected {events_file} (relative to {REPO_ROOT})", file=sys.stderr)
+            print(
+                f"Error: expected {events_file} (relative to {REPO_ROOT})",
+                file=sys.stderr,
+            )
             sys.exit(1)
         source = events_file.read_text(encoding="utf-8")
         events = parse_structs(source)
@@ -261,7 +266,7 @@ def main():
             for f in ev["fields"]:
                 f["topic"] = f["name"] in topics
 
-        blocks = [f"# {title}", ""]
+        blocks: list[str] = [f"# {title}", ""]
         if src_rel == "contracts/raffle-shared/src":
             intro = (
                 "These events are defined once in "
@@ -285,9 +290,13 @@ def main():
             blocks.append(md_table(ev["fields"]))
             blocks.append("")
             if src_rel == "contracts/raffle-shared/src":
-                emitters = []
-                for other_rel in SHARED_EMITTER_SRC:
-                    emitters = sorted(set(emitters) | set(find_emitters(REPO_ROOT / other_rel, ev["name"])))
+                emitters: list[str] = sorted(
+                    {
+                        fn
+                        for other_rel in SHARED_EMITTER_SRC
+                        for fn in find_emitters(REPO_ROOT / other_rel, ev["name"])
+                    }
+                )
             else:
                 emitters = find_emitters(src_dir, ev["name"])
             if emitters:

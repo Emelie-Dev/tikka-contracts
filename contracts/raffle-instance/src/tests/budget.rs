@@ -130,6 +130,7 @@ fn setup_raffle(
         prizes: build_prizes(env, prize_tiers),
         randomness_source: RandomnessSource::Internal,
         oracle_address: None,
+        oracle_public_key: None,
         protocol_fee_bp: 0,
         treasury_address: Some(Address::generate(env)),
         swap_router: None,

@@ -56,8 +56,15 @@ export class GracefulShutdown {
   private readonly setTimeoutFn: (fn: () => void, ms: number) => ReturnType<typeof setTimeout>;
   private readonly clearTimeoutFn: (handle: ReturnType<typeof setTimeout>) => void;
 
-  /** Resolves when stopListening has been called on the listener. */
+  /** Called first on shutdown to stop the event-listener poll loop. */
   private stopListening?: () => void;
+
+  /**
+   * Hooks run after the drain and checkpoint-persist but before exitFn.
+   * Registered via registerShutdownHook(); called in registration order.
+   * Typical use: zeroize key material after all signing work is done.
+   */
+  private readonly shutdownHooks: Array<() => void> = [];
 
   /** True once a signal has been received — prevents double-handling. */
   private shutdownInitiated = false;
@@ -90,6 +97,21 @@ export class GracefulShutdown {
 
     process.once('SIGTERM', () => handler('SIGTERM'));
     process.once('SIGINT', () => handler('SIGINT'));
+  }
+
+  /**
+   * Register a hook that is invoked after the queue has been drained and the
+   * ledger checkpoint has been persisted, but **before** the process exits.
+   *
+   * Hooks are called synchronously in registration order.  Use this for
+   * teardown that must happen after all signing/submission work is complete —
+   * for example, zeroizing key material from memory.
+   *
+   * @param fn  Teardown callback.  Must not throw; any error is logged and
+   *            swallowed so that subsequent hooks still run.
+   */
+  registerShutdownHook(fn: () => void): void {
+    this.shutdownHooks.push(fn);
   }
 
   /**
@@ -143,7 +165,17 @@ export class GracefulShutdown {
       logger.error('Failed to persist checkpoint on shutdown:', err);
     }
 
-    // 4. Exit 0 — clean shutdown.
+    // 4. Run registered shutdown hooks (e.g. zeroize key material) after all
+    //    signing work is complete but before the process exits.
+    for (const hook of this.shutdownHooks) {
+      try {
+        hook();
+      } catch (err) {
+        logger.error('Error in shutdown hook:', err);
+      }
+    }
+
+    // 5. Exit 0 — clean shutdown.
     if (!timedOut) {
       logger.info('Graceful shutdown complete. Exiting 0.');
       this.exitFn(0);
