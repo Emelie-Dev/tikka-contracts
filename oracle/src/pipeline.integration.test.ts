@@ -1,5 +1,5 @@
 import { Keypair, rpc as SorobanRpc, scValToNative, Address, xdr } from '@stellar/stellar-sdk';
-import { createPipeline } from './pipeline';
+import { createPipeline } from './composition-root';
 import { Alerter } from './alert/alerter';
 import { MemoryLedgerCheckpointStore } from './listener/ledger-checkpoint';
 import { DeduplicationStore } from './deduplication/deduplication.store';
@@ -7,13 +7,13 @@ import { DeduplicationStore } from './deduplication/deduplication.store';
 jest.mock('@stellar/stellar-sdk', () => {
   const original = jest.requireActual('@stellar/stellar-sdk');
   const mock = Object.create(original);
-  
+
   Object.defineProperty(mock, 'scValToNative', {
     value: jest.fn(),
     writable: true,
     configurable: true,
   });
-  
+
   const mockRpc = Object.create(original.rpc);
   Object.defineProperty(mockRpc, 'assembleTransaction', {
     value: jest.fn().mockImplementation((tx: any) => ({
@@ -154,7 +154,10 @@ describe('Oracle Pipeline Integration - Happy Paths', () => {
 
     const config = {
       rpcUrl,
+      oracleSecretKey: testOracleKeypair.secret(),
+      networkPassphrase: 'Test SDF Network ; September 2015',
       factoryContractId: 'CFACTORY1',
+      nodeEnv: 'test',
       logLevel: 'info',
       pollIntervalMs: 1,
       alertWebhookUrl: '',
@@ -163,16 +166,23 @@ describe('Oracle Pipeline Integration - Happy Paths', () => {
       alertQueueDepthLimit: 10,
       alertQueueAgeLimitMs: 300000,
       alertRpcUnreachableThreshold: 3,
+      queueMaxAttempts: 5,
+      vaultToken: '',
+      retryPolicy: { baseMs: 500, maxMs: 30000, maxAttempts: 5 },
+      dataDir: '/tmp/oracle-data',
+      checkpointPath: '/tmp/oracle-data/checkpoint.json',
+      dedupPath: '/tmp/oracle-data/dedup.json',
+      rpcSimulateTimeoutMs: 10000,
     };
 
-    const pipeline = createPipeline(config, {
+    const pipeline = await createPipeline(config, {
       alerter: mockAlerter,
       checkpointStore: mockCheckpoint,
       dedupStore: mockDedup,
     });
 
     await pipeline.start([raffleContract]);
-    
+
     // Wait for the pipeline loop to process the event
     await new Promise((resolve) => setTimeout(resolve, 150));
     await pipeline.shutdown();
@@ -197,7 +207,10 @@ describe('Oracle Pipeline Integration - Happy Paths', () => {
 
     const config = {
       rpcUrl,
+      oracleSecretKey: keypairA.secret(),
+      networkPassphrase: 'Test SDF Network ; September 2015',
       factoryContractId: 'CFACTORY1',
+      nodeEnv: 'test',
       logLevel: 'info',
       pollIntervalMs: 1,
       alertWebhookUrl: '',
@@ -206,6 +219,13 @@ describe('Oracle Pipeline Integration - Happy Paths', () => {
       alertQueueDepthLimit: 10,
       alertQueueAgeLimitMs: 300000,
       alertRpcUnreachableThreshold: 3,
+      queueMaxAttempts: 5,
+      vaultToken: '',
+      retryPolicy: { baseMs: 500, maxMs: 30000, maxAttempts: 5 },
+      dataDir: '/tmp/oracle-data',
+      checkpointPath: '/tmp/oracle-data/checkpoint.json',
+      dedupPath: '/tmp/oracle-data/dedup.json',
+      rpcSimulateTimeoutMs: 10000,
     };
 
     SorobanRpc.Server.prototype.getLatestLedger = async () => {
@@ -266,15 +286,27 @@ describe('Oracle Pipeline Integration - Happy Paths', () => {
 
     // Create 3 pipelines
     process.env.ORACLE_SECRET_KEY = keypairA.secret();
-    const pipelineA = createPipeline(config, { alerter: mockAlerter, checkpointStore: new MemoryLedgerCheckpointStore(), dedupStore: new DeduplicationStore(':memory:') });
+    const pipelineA = await createPipeline(config, {
+      alerter: mockAlerter,
+      checkpointStore: new MemoryLedgerCheckpointStore(),
+      dedupStore: new DeduplicationStore(':memory:'),
+    });
     await pipelineA.start([raffleContract]);
 
     process.env.ORACLE_SECRET_KEY = keypairB.secret();
-    const pipelineB = createPipeline(config, { alerter: mockAlerter, checkpointStore: new MemoryLedgerCheckpointStore(), dedupStore: new DeduplicationStore(':memory:') });
+    const pipelineB = await createPipeline(config, {
+      alerter: mockAlerter,
+      checkpointStore: new MemoryLedgerCheckpointStore(),
+      dedupStore: new DeduplicationStore(':memory:'),
+    });
     await pipelineB.start([raffleContract]);
 
     process.env.ORACLE_SECRET_KEY = keypairC.secret();
-    const pipelineC = createPipeline(config, { alerter: mockAlerter, checkpointStore: new MemoryLedgerCheckpointStore(), dedupStore: new DeduplicationStore(':memory:') });
+    const pipelineC = await createPipeline(config, {
+      alerter: mockAlerter,
+      checkpointStore: new MemoryLedgerCheckpointStore(),
+      dedupStore: new DeduplicationStore(':memory:'),
+    });
     await pipelineC.start([raffleContract]);
 
     // Manually trigger processJob for each oracle to simulate receiving the event
@@ -283,11 +315,7 @@ describe('Oracle Pipeline Integration - Happy Paths', () => {
     await (pipelineB as any).processJob(job);
     await (pipelineC as any).processJob(job);
 
-    await Promise.all([
-      pipelineA.shutdown(),
-      pipelineB.shutdown(),
-      pipelineC.shutdown(),
-    ]);
+    await Promise.all([pipelineA.shutdown(), pipelineB.shutdown(), pipelineC.shutdown()]);
 
     // Verify all 3 oracles made a submission attempt
     expect(submittedContracts).toHaveLength(3);

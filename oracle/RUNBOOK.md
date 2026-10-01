@@ -2,6 +2,94 @@
 
 Operational guide for the Tikka randomness oracle service.
 
+## First-Run Setup
+
+The oracle service is deployed via `docker-compose.yml` from the repository root. Before starting, prepare your environment:
+
+### 1. Create environment file
+
+Copy `.env.example` to `.env` and populate with your production credentials:
+
+```bash
+cp .env.example .env
+# Edit .env with:
+# - ORACLE_SECRET_KEY: Ed25519 secret key (S... format or 32-byte hex/base64)
+# - STELLAR_RPC_URL: Soroban RPC endpoint
+# - FACTORY_CONTRACT_ID: Raffle factory contract address
+# - Optional: ALERT_WEBHOOK_URL for operational alerts
+```
+
+### 2. Start the service
+
+```bash
+docker-compose up -d
+```
+
+Docker Compose will:
+- Build the oracle service from `oracle/Dockerfile`
+- Mount a persistent volume at `/usr/src/app/data` for checkpoint and dedup state
+- Expose the health and metrics endpoints on port 9090
+- Apply resource limits (512 MB memory, 1 CPU) to prevent runaway consumption
+- Rotate logs to prevent unbounded growth
+
+### 3. Verify startup
+
+```bash
+# Check service is running
+docker-compose ps
+
+# View logs
+docker-compose logs -f oracle
+
+# Check health endpoint (returns {"status":"ok"})
+curl http://localhost:9090/health
+
+# View metrics (Prometheus text format)
+curl http://localhost:9090/metrics
+```
+
+### 4. Local development
+
+For development, copy `docker-compose.override.yml.example` to `docker-compose.override.yml`:
+
+```bash
+cp docker-compose.override.yml.example docker-compose.override.yml
+```
+
+This disables production resource limits and enables debug logging without modifying the committed compose file.
+
+## Data Persistence
+
+The oracle service maintains two critical files in the `/data` volume:
+
+### checkpoint.json
+
+**Purpose:** Tracks the last successfully processed ledger number  
+**Size:** ~100 bytes  
+**Persistence:** Must survive container restarts to avoid event gaps  
+**Loss impact:** If lost, the oracle resumes from the current ledger and misses any `RandomnessRequested` events that occurred while it was down. Fallback: the raffle will timeout on-chain after `ORACLE_TIMEOUT_LEDGERS` and use internal PRNG.
+
+### dedup.json
+
+**Purpose:** Prevents duplicate submission of randomness seeds  
+**Size:** Grows with the number of unique (raffle, request_id) pairs processed  
+**Persistence:** Must survive container restarts to prevent double-submissions  
+**Loss impact:** If lost, requests that were successfully submitted on-chain may be re-submitted after restart, causing `RandomnessAlreadyProvided` errors on-chain.
+
+### Volume mount configuration
+
+The `docker-compose.yml` mounts a named volume `oracle_data` at `/app/data`:
+
+```yaml
+volumes:
+  oracle_data:
+    driver: local
+```
+
+This path matches the container's `WORKDIR /app` and is pre-created with `node`-user ownership in the Dockerfile (`RUN mkdir -p /app/data && chown node:node /app/data`), so the service can write state files without root privileges.
+
+To change the location, set `DATA_DIR` in your `.env` file to the desired absolute or relative path and update the volume mount target in `docker-compose.yml` to match. For Kubernetes deployments, mount a persistent volume claim at the same path.
+
 ## Health and Metrics Endpoints
 
 | Endpoint | Purpose |
@@ -10,6 +98,8 @@ Operational guide for the Tikka randomness oracle service.
 | `GET /metrics` | Prometheus text exposition format |
 
 Default port: `9090` (override with `HEALTH_PORT`).
+
+Endpoints are exposed on the host as `http://localhost:9090` via the docker-compose port mapping.
 
 ## Metrics Reference
 
@@ -189,6 +279,7 @@ The oracle service requires the following environment variables:
 
 Optional configuration:
 
+- `DATA_DIR`: Directory for persistent state files (`checkpoint.json` and `dedup.json`). Resolved to an absolute path at startup. In Docker this is the `oracle_data` named volume mounted at `/app/data`. **If this directory is not persisted across restarts the oracle resumes from the current ledger and will miss any `RandomnessRequested` events that arrived while it was down.** (default: `./data`)
 - `LOG_LEVEL`: Logging verbosity (`debug`, `info`, `warn`, `error`; default: `info`)
 - `POLL_INTERVAL_MS`: Event polling interval in milliseconds (default: 5000)
 - `HEALTH_PORT`: Port for `/health` and `/metrics` (default: 9090)
@@ -198,6 +289,9 @@ Optional configuration:
 - `ALERT_QUEUE_DEPTH_LIMIT`: Queue depth alert threshold (default: 10)
 - `ALERT_QUEUE_AGE_LIMIT_MS`: Queue age alert threshold (default: 300000)
 - `ALERT_RPC_UNREACHABLE_THRESHOLD`: RPC unreachable alert threshold (default: 3)
+- `ORACLE_RETRY_BASE_MS`: Retry backoff base in milliseconds (default: 500)
+- `ORACLE_RETRY_MAX_MS`: Maximum retry backoff in milliseconds (default: 30000)
+- `ORACLE_RETRY_MAX_ATTEMPTS`: Maximum submission attempts (default: 5)
 
 ### Starting the service
 
@@ -266,6 +360,12 @@ If shutdown timeout is exceeded:
 ```
 Graceful shutdown drain exceeded 30000 ms — forcing exit 1.
 ```
+
+## Randomness sources
+
+In single-oracle mode, the oracle signs a message bound to the raffle contract and request ID. The seed submitted on-chain is the first 8 bytes of SHA-256 of that signature proof, interpreted as a big-endian u64; the on-chain verifier independently derives the same value. The wall clock is not a source of seed entropy.
+
+In quorum mode, each participating oracle generates its seed from 8 bytes returned by Node.js `crypto.randomBytes`.
 
 ## Pipeline components
 

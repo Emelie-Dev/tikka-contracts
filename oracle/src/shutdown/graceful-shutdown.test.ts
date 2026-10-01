@@ -144,6 +144,19 @@ describe('GracefulShutdown – drains in-flight jobs', () => {
 
     expect(queue.size()).toBe(0);
   });
+
+  it('handles shutdown before startup completes without throwing TypeError', async () => {
+    const { sd, stopListening, exitFn } = makeShutdown({
+      jobs: [makeJob(1n)],
+      processJob: async () => {
+        throw new Error('Pipeline is not initialized: QuorumService is unavailable');
+      },
+    });
+    sd.register(stopListening);
+    await sd.shutdown();
+
+    expect(exitFn).toHaveBeenCalledWith(0);
+  });
 });
 
 // ─── timeout / force-exit ─────────────────────────────────────────────────
@@ -196,6 +209,81 @@ describe('GracefulShutdown – force-exits on drain timeout', () => {
     await Promise.resolve();
 
     expect(exitFn).toHaveBeenCalledWith(1);
+  });
+});
+
+// ─── shutdown hooks ───────────────────────────────────────────────────────
+
+describe('GracefulShutdown – shutdown hooks', () => {
+  it('runs a registered hook before exitFn', async () => {
+    const order: string[] = [];
+    const exitFn = jest.fn(() => { order.push('exit'); });
+    const hook   = jest.fn(() => { order.push('hook'); });
+
+    const { sd, stopListening } = makeShutdown({ exitFn, checkpointLedger: 1 });
+    sd.register(stopListening);
+    sd.registerShutdownHook(hook);
+
+    await sd.shutdown();
+
+    expect(hook).toHaveBeenCalledTimes(1);
+    expect(exitFn).toHaveBeenCalledWith(0);
+    // Critical ordering assertion: key material must be zeroized before exit.
+    expect(order).toEqual(['hook', 'exit']);
+  });
+
+  it('runs multiple hooks in registration order before exitFn', async () => {
+    const order: string[] = [];
+    const exitFn = jest.fn(() => { order.push('exit'); });
+
+    const { sd, stopListening } = makeShutdown({ exitFn, checkpointLedger: 1 });
+    sd.register(stopListening);
+    sd.registerShutdownHook(() => { order.push('hook-1'); });
+    sd.registerShutdownHook(() => { order.push('hook-2'); });
+    sd.registerShutdownHook(() => { order.push('hook-3'); });
+
+    await sd.shutdown();
+
+    expect(order).toEqual(['hook-1', 'hook-2', 'hook-3', 'exit']);
+  });
+
+  it('continues running remaining hooks and exitFn when one hook throws', async () => {
+    const order: string[] = [];
+    const exitFn = jest.fn(() => { order.push('exit'); });
+
+    const { sd, stopListening } = makeShutdown({ exitFn, checkpointLedger: 1 });
+    sd.register(stopListening);
+    sd.registerShutdownHook(() => { order.push('hook-1'); });
+    sd.registerShutdownHook(() => { throw new Error('hook failure'); });
+    sd.registerShutdownHook(() => { order.push('hook-3'); });
+
+    await sd.shutdown();
+
+    // The throwing hook must not abort the sequence.
+    expect(order).toEqual(['hook-1', 'hook-3', 'exit']);
+    expect(exitFn).toHaveBeenCalledWith(0);
+  });
+
+  it('hooks run after the queue is drained, so signing work completes first', async () => {
+    const order: string[] = [];
+    const exitFn = jest.fn(() => { order.push('exit'); });
+
+    const { sd, stopListening } = makeShutdown({
+      jobs: [makeJob(1n)],
+      checkpointLedger: 10,
+      exitFn,
+      processJob: async () => {
+        order.push('drain');
+        return true;
+      },
+    });
+    sd.register(stopListening);
+    sd.registerShutdownHook(() => { order.push('zeroize'); });
+
+    await sd.shutdown();
+
+    // drain must complete before zeroize, zeroize before exit.
+    expect(order).toEqual(['drain', 'zeroize', 'exit']);
   });
 });
 

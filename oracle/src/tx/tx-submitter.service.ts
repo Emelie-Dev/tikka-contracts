@@ -1,7 +1,6 @@
 import {
   Account,
   Contract,
-  Networks,
   rpc as SorobanRpc,
   TransactionBuilder,
   nativeToScVal,
@@ -16,9 +15,8 @@ import {
   oracleSubmissionsTotal,
 } from '../metrics/metrics';
 import { RandomnessJob } from '../queue/request-queue';
+import { RetryPolicy, RetryPolicyOptions } from './retry-policy';
 
-const MAX_RETRIES = 5;
-const BASE_BACKOFF_MS = 500;
 const SUBMISSION_FEE_STROOPS = 100_000;
 
 export interface ProvideRandomnessParams {
@@ -42,6 +40,7 @@ export interface TxSubmitterOptions {
   alerter?: Alerter;
   failureThreshold?: number;
   sleep?: (ms: number) => Promise<void>;
+  retryPolicy?: RetryPolicyOptions;
 }
 
 export class TxSubmitterService {
@@ -50,28 +49,27 @@ export class TxSubmitterService {
   private readonly alerter?: Alerter;
   private readonly failureThreshold: number;
   private readonly sleepImpl: (ms: number) => Promise<void>;
+  private readonly retryPolicy: RetryPolicy;
   private sequenceCache?: string;
   private consecutiveFailures = 0;
 
   constructor(
     private readonly keyService: KeyService,
-    options: TxSubmitterOptions | string = {},
+    options: TxSubmitterOptions | string = {}
   ) {
     if (typeof options === 'string') {
       options = { rpcUrl: options };
     }
-    const rpcUrl =
-      options.rpcUrl ?? process.env['STELLAR_RPC_URL'] ?? 'https://soroban-testnet.stellar.org';
+    const rpcUrl = options.rpcUrl ?? 'https://soroban-testnet.stellar.org';
     this.server = new SorobanRpc.Server(rpcUrl, { allowHttp: rpcUrl.startsWith('http://') });
-    this.networkPassphrase =
-      options.networkPassphrase ?? process.env['STELLAR_NETWORK_PASSPHRASE'] ?? Networks.TESTNET;
+    this.networkPassphrase = options.networkPassphrase ?? 'Test SDF Network ; September 2015';
     this.alerter = options.alerter;
-    this.failureThreshold =
-      options.failureThreshold ?? Number(process.env['ALERT_FAILURE_THRESHOLD'] ?? 3);
+    this.failureThreshold = options.failureThreshold ?? 3;
     this.sleepImpl = options.sleep ?? ((ms) => new Promise((resolve) => setTimeout(resolve, ms)));
+    this.retryPolicy = new RetryPolicy(options.retryPolicy);
   }
 
-  async submitProvideRandomness(params: ProvideRandomnessParams): Promise<SubmitResult> {
+  async submitProvideRandomness(params: ProvideRandomnessParams): Promise<string> {
     let lastError: Error | undefined;
     let retried = false;
 
@@ -89,23 +87,24 @@ export class TxSubmitterService {
         lastError = err instanceof Error ? err : new Error(String(err));
         const decision = this.retryPolicy.classify(lastError);
 
-        this.recordFailure(message);
+        this.recordFailure(lastError.message);
 
-        if (!this.isRetryable(message)) {
+        if (!decision.retry) {
           oracleSubmissionsTotal.labels('fatal').inc();
           oracleDeadLetterTotal.inc();
-          throw new Error(`Permanent failure submitting provide_randomness: ${message}`);
+          throw new Error(
+            `Permanent failure submitting provide_randomness (${decision.class}): ${lastError.message}`
+          );
         }
 
         retried = true;
 
-        if (message.includes('AccountSequenceMismatch') || message.includes('sequence')) {
+        if (decision.action === 'refresh-sequence') {
           this.sequenceCache = undefined;
         }
 
-        if (attempt < MAX_RETRIES - 1) {
-          const delay = BASE_BACKOFF_MS * 2 ** attempt;
-          await this.sleepImpl(delay);
+        if (attempt < this.retryPolicy.maxAttempts - 1) {
+          await this.sleepImpl(this.retryPolicy.nextDelay(attempt));
         }
       }
     }
@@ -113,12 +112,17 @@ export class TxSubmitterService {
     oracleSubmissionsTotal.labels('fatal').inc();
     oracleDeadLetterTotal.inc();
     throw new Error(
-      `Failed to submit provide_randomness after ${MAX_RETRIES} attempts: ${lastError?.message}`
+      `Failed to submit provide_randomness after ${this.retryPolicy.maxAttempts} attempts: ${lastError?.message}`
     );
   }
 
   /** Convenience wrapper that forwards queue job metadata for latency metrics. */
-  async submitJob(job: RandomnessJob, randomSeed: bigint, publicKey: Uint8Array, proof: Uint8Array): Promise<string> {
+  async submitJob(
+    job: RandomnessJob,
+    randomSeed: bigint,
+    publicKey: Uint8Array,
+    proof: Uint8Array
+  ): Promise<string> {
     return this.submitProvideRandomness({
       raffleContract: job.raffleContract,
       randomSeed,
@@ -204,34 +208,35 @@ export class TxSubmitterService {
   async submitProvideQuorumRandomness(params: ProvideQuorumRandomnessParams): Promise<string> {
     let lastError: Error | undefined;
 
-    for (let attempt = 0; attempt < MAX_RETRIES; attempt++) {
+    for (let attempt = 0; attempt < this.retryPolicy.maxAttempts; attempt++) {
       try {
         const hash = await this.submitQuorumOnce(params);
         this.consecutiveFailures = 0;
         return hash;
       } catch (err) {
         lastError = err instanceof Error ? err : new Error(String(err));
-        const message = lastError.message;
+        const decision = this.retryPolicy.classify(lastError);
 
-        this.recordFailure(message);
+        this.recordFailure(lastError.message);
 
-        if (!this.isRetryable(message)) {
-          throw new Error(`Permanent failure submitting provide_quorum_randomness: ${message}`);
+        if (!decision.retry) {
+          throw new Error(
+            `Permanent failure submitting provide_quorum_randomness (${decision.class}): ${lastError.message}`
+          );
         }
 
-        if (message.includes('AccountSequenceMismatch') || message.includes('sequence')) {
+        if (decision.action === 'refresh-sequence') {
           this.sequenceCache = undefined;
         }
 
-        if (attempt < MAX_RETRIES - 1) {
-          const delay = BASE_BACKOFF_MS * 2 ** attempt;
-          await this.sleepImpl(delay);
+        if (attempt < this.retryPolicy.maxAttempts - 1) {
+          await this.sleepImpl(this.retryPolicy.nextDelay(attempt));
         }
       }
     }
 
     throw new Error(
-      `Failed to submit provide_quorum_randomness after ${MAX_RETRIES} attempts: ${lastError?.message}`
+      `Failed to submit provide_quorum_randomness after ${this.retryPolicy.maxAttempts} attempts: ${lastError?.message}`
     );
   }
 
@@ -253,7 +258,7 @@ export class TxSubmitterService {
       networkPassphrase: this.networkPassphrase,
     })
       .addOperation(operation)
-      .setTimeout(timeout)
+      .setTimeout(300)
       .build();
 
     const simulated = await this.server.simulateTransaction(tx);
@@ -298,25 +303,6 @@ export class TxSubmitterService {
       await this.sleepImpl(intervalMs);
     }
     throw new Error(`TxTooLate: transaction ${hash} not confirmed within timeout`);
-  }
-
-  private isRetryable(message: string): boolean {
-    const retryable = [
-      'TxTooLate',
-      'InsufficientFee',
-      'AccountSequenceMismatch',
-      'ECONNRESET',
-      'ETIMEDOUT',
-      'fetch failed',
-      'network',
-      'not confirmed within timeout',
-      'Send failed',
-      // HTTP 5xx transient errors from getAccount / simulate / send
-      'status code 5',
-      'status code 429',
-      'Request failed',
-    ];
-    return retryable.some((token) => message.includes(token));
   }
 
   private recordFailure(message: string): void {

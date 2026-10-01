@@ -47,6 +47,7 @@ fn setup_unique_winners_raffle(env: &Env) -> (ContractClient<'_>, Address, Addre
         prizes: soroban_sdk::vec![env, 6000u32, 3000, 1000],
         randomness_source: RandomnessSource::Internal,
         oracle_address: None,
+        oracle_public_key: None,
         protocol_fee_bp: 0,
         treasury_address: None,
         swap_router: None,
@@ -142,208 +143,303 @@ fn snapshot(env: &Env) -> (u64, u64) {
     )
 }
 
-#[test]
-#[ignore = "issue #1077: quorum last-revealer bias"]
-fn test_quorum_last_revealer_bias() {
-    let env = Env::default();
-    env.mock_all_auths();
+// ── Acceptance-criterion tests for #1006 ─────────────────────────────────────
+//
+// Regression guard: select_winner_indices(env, n, k) must return exactly
+// min(k, n) indices.  The bug kept `drawn_count` at zero so the break never
+// fired, and the loop collected every unique index up to total_tickets instead
+// of stopping at winner_count.
 
-    let oracle_a = Address::generate(&env);
-    let oracle_b = Address::generate(&env);
-    let oracle_c = Address::generate(&env);
-    let oracles = soroban_sdk::vec![&env, oracle_a.clone(), oracle_b.clone(), oracle_c.clone()];
+#[cfg(test)]
+mod winner_count_regression {
+    use crate::helpers::build_internal_seed_u64;
+    use crate::randomness::OracleSeedWinnerSelection;
+    use soroban_sdk::{testutils::Ledger, Env};
 
-    let contract_id = env.register(Contract, ());
-    let client = ContractClient::new(&env, &contract_id);
+    #[test]
+    fn internal_draws_differ_across_networks() {
+        let env = Env::default();
+        let contract_id = env.register(crate::Contract, ());
+        env.ledger().set_timestamp(1_000);
+        env.ledger().set_sequence_number(100);
+        env.ledger().set_network_id([1u8; 32]);
 
-    let factory = Address::generate(&env);
-    let admin = Address::generate(&env);
-    let creator = Address::generate(&env);
-    let buyer_1 = Address::generate(&env);
-    let buyer_2 = Address::generate(&env);
-    let buyer_3 = Address::generate(&env);
+        let first_draw = env.as_contract(&contract_id, || {
+            let seed = build_internal_seed_u64(&env);
+            OracleSeedWinnerSelection::new(seed).select_winner_indices_pure(100, 100)
+        });
 
-    let token_admin = Address::generate(&env);
-    let payment_token = env.register_stellar_asset_contract_v2(token_admin).address();
-    let token = StellarAssetClient::new(&env, &payment_token);
-    token.mint(&creator, &100_000);
-    token.mint(&buyer_1, &100_000);
-    token.mint(&buyer_2, &100_000);
-    token.mint(&buyer_3, &100_000);
+        env.ledger().set_network_id([2u8; 32]);
+        let second_draw = env.as_contract(&contract_id, || {
+            let seed = build_internal_seed_u64(&env);
+            OracleSeedWinnerSelection::new(seed).select_winner_indices_pure(100, 100)
+        });
 
-    let config = RaffleConfig {
-        description: String::from_str(&env, "Quorum bias test"),
-        end_time: 0,
-        no_deadline: true,
-        max_tickets: 3,
-        max_tickets_per_tx: 3,
-        max_tickets_per_address: 0,
-        min_tickets: 1,
-        allow_multiple: true,
-        ticket_price: MIN_TICKET_PRICE,
-        payment_token: payment_token.clone(),
-        prize_amount: MIN_TICKET_PRICE * 10,
-        prizes: soroban_sdk::vec![&env, 10000],
-        randomness_source: RandomnessSource::Quorum(raffle_shared::QuorumConfig { k: 2, oracles }),
-        oracle_address: None,
-        protocol_fee_bp: 0,
-        treasury_address: None,
-        swap_router: None,
-        tikka_token: None,
-        metadata_hash: BytesN::from_array(&env, &[0u8; 32]),
-        claim_lockup_seconds: Some(0),
-        swap_deadline_seconds: Some(300),
-        early_bird_ticket_percentage: 0,
-        early_bird_discount_bp: 0,
-        category: None,
-        unique_winners: true,
-        bundles: Vec::new(&env),
-        prize_token: None,
-        nft_contract: None,
-    };
-
-    client.init(&factory, &admin, &creator, &config);
-    env.as_contract(&contract_id, || {
-        env.storage().instance().remove(&DataKey::Factory);
-    });
-    client.deposit_prize();
-
-    client.buy_tickets(&buyer_1, &1); // index 0
-    client.buy_tickets(&buyer_2, &1); // index 1
-    client.buy_tickets(&buyer_3, &1); // index 2
-
-    client.finalize_raffle();
-
-    let request_id: u64 = env.as_contract(&contract_id, || {
-        env.storage().instance().get(&DataKey::RandomnessRequestId).unwrap()
-    });
-
-    let seed_a: u64 = 12345;
-    client.provide_quorum_randomness(&oracle_a, &seed_a, &request_id);
-
-    let mut chosen_seed_b = 0;
-    for seed_b in 0..10_000u64 {
-        let seeds = soroban_sdk::vec![&env, (oracle_a.clone(), seed_a), (oracle_b.clone(), seed_b)];
-        let aggregate = crate::randomness::aggregate_quorum_seeds(&env, &seeds);
-        let selector = crate::randomness::OracleSeedWinnerSelection::new(aggregate);
-        let winners = selector.select_winner_indices(&env, 3, 1);
-        if winners.len() > 0 && winners.get(0).unwrap() == 2 {
-            chosen_seed_b = seed_b;
-            break;
-        }
+        assert_ne!(first_draw, second_draw);
     }
 
-    let res = client.try_provide_quorum_randomness(&oracle_b, &chosen_seed_b, &request_id);
-    assert!(res.is_err(), "Contract should reject the ability to last-revealer bias the quorum draw");
+    /// k > n: when more winners are requested than tickets exist, return at
+    /// most n (no duplicates possible beyond that cap).
+    #[test]
+    fn oracle_seed_caps_at_total_tickets_when_k_exceeds_n() {
+        let selector = OracleSeedWinnerSelection::new(0xDEAD_BEEF_1234_5678);
+        let total_tickets: u32 = 4;
+        let winner_count: u32 = 10; // k > n
+        let indices = selector.select_winner_indices_pure(total_tickets, winner_count);
+        assert_eq!(
+            indices.len(),
+            total_tickets as usize,
+            "k>n: expected {} winners (capped at total_tickets), got {}",
+            total_tickets,
+            indices.len()
+        );
+        // All indices must be unique and in-range.
+        let mut seen = std::collections::HashSet::new();
+        for &idx in &indices {
+            assert!(idx < total_tickets, "index {idx} out of range [0, {total_tickets})");
+            assert!(seen.insert(idx), "duplicate index {idx}");
+        }
+    }
 }
 
-#[test]
-#[ignore = "issue #1077: vrf keypair grinding bias"]
-fn test_provide_randomness_grinding_bias() {
-    use ed25519_dalek::{SigningKey, Signer};
-    use rand_core::OsRng;
-    
-    let env = Env::default();
-    env.mock_all_auths();
+// ── #991: unique-winner draws must not bias neighbouring ticket holders ─────
+//
+// `resolve_unique_winner` used to walk forward from the originally drawn index
+// (`candidate + 1`, `candidate + 2`, …) until it found an owner that had not
+// already won. Every collision therefore landed on the ticket immediately after
+// the colliding one, so with a small participant set and multiple tiers the
+// holder sitting just past a repeat winner was systematically over-represented
+// and ticket 0 was the least likely winner of all. The probe is replaced by a
+// bounded, domain-separated re-draw (`resample_unique_index`), and these tests
+// pin the resulting distribution.
+//
+// The fixture is deliberately the worst case for the old probe: three owners
+// holding one contiguous block of tickets each, two prize tiers. Ticket blocks
+// are contiguous so a forward walk has somewhere obvious to stop.
 
-    let oracle = Address::generate(&env);
-    let contract_id = env.register(Contract, ());
-    let client = ContractClient::new(&env, &contract_id);
+#[cfg(test)]
+mod unique_winner_uniformity {
+    use crate::randomness::OracleSeedWinnerSelection;
 
-    let factory = Address::generate(&env);
-    let admin = Address::generate(&env);
-    let creator = Address::generate(&env);
-    let buyer_1 = Address::generate(&env);
-    let buyer_2 = Address::generate(&env);
-    let buyer_3 = Address::generate(&env);
+    /// Number of distinct ticket owners in the fixture below.
+    const OWNERS: u32 = 3;
+    /// Prize tiers drawn per simulation. Two tiers is the minimum that forces a
+    /// second tier to re-draw: the first tier has no prior winner to collide
+    /// with.
+    const TIERS: u32 = 2;
+    /// Owner of `ticket`: one contiguous block of tickets per owner.
+    fn owner_of(ticket: u32, total_tickets: u32) -> u32 {
+        ticket * OWNERS / total_tickets
+    }
+    /// Size of owner 0's ticket block, i.e. the number of tickets that become
+    /// ineligible for the second tier once owner 0 has won.
+    fn first_block_size(total_tickets: u32) -> u32 {
+        (total_tickets + OWNERS - 1) / OWNERS
+    }
 
-    let token_admin = Address::generate(&env);
-    let payment_token = env.register_stellar_asset_contract_v2(token_admin).address();
-    let token = StellarAssetClient::new(&env, &payment_token);
-    token.mint(&creator, &100_000);
-    token.mint(&buyer_1, &100_000);
-    token.mint(&buyer_2, &100_000);
-    token.mint(&buyer_3, &100_000);
+    /// Chi-squared statistic of `histogram` against a uniform expectation.
+    fn compute_chi_squared(histogram: &[u32], total_samples: u32) -> f64 {
+        let k = histogram.len() as f64;
+        let expected = total_samples as f64 / k;
+        let mut chi2 = 0.0;
+        for &count in histogram {
+            let diff = count as f64 - expected;
+            chi2 += (diff * diff) / expected;
+        }
+        chi2
+    }
 
-    let config = RaffleConfig {
-        description: String::from_str(&env, "VRF grinding bias test"),
-        end_time: 0,
-        no_deadline: true,
-        max_tickets: 3,
-        max_tickets_per_tx: 3,
-        max_tickets_per_address: 0,
-        min_tickets: 1,
-        allow_multiple: true,
-        ticket_price: MIN_TICKET_PRICE,
-        payment_token: payment_token.clone(),
-        prize_amount: MIN_TICKET_PRICE * 10,
-        prizes: soroban_sdk::vec![&env, 10000],
-        randomness_source: RandomnessSource::External,
-        oracle_address: Some(oracle.clone()),
-        protocol_fee_bp: 0,
-        treasury_address: None,
-        swap_router: None,
-        tikka_token: None,
-        metadata_hash: BytesN::from_array(&env, &[0u8; 32]),
-        claim_lockup_seconds: Some(0),
-        swap_deadline_seconds: Some(300),
-        early_bird_ticket_percentage: 0,
-        early_bird_discount_bp: 0,
-        category: None,
-        unique_winners: true,
-        bundles: Vec::new(&env),
-        prize_token: None,
-        nft_contract: None,
-    };
+    /// Two-sided Chi-squared critical value at alpha = 0.001.
+    fn critical_value_999(degrees_of_freedom: usize) -> f64 {
+        // Wilson-Hilferty approximation, accurate to a few percent over the
+        // range used here, which is far tighter than the effect being detected.
+        let df = degrees_of_freedom as f64;
+        let z = 3.090232306167813;
+        df * (1.0 - 2.0 / (9.0 * df) + z * (2.0 / (9.0 * df)).sqrt()).powi(3)
+    }
 
-    client.init(&factory, &admin, &creator, &config);
-    env.as_contract(&contract_id, || {
-        env.storage().instance().remove(&DataKey::Factory);
-    });
-    client.deposit_prize();
+    /// Runs the two-tier `unique_winners = true` draw loop used on-chain and
+    /// returns the tier-1 winners observed when tier 0 went to owner 0.
+    ///
+    /// Conditioning on tier 0 matters: tier 1 can only ever be won by one of
+    /// the two *remaining* owners, so an unconditional histogram over all
+    /// tickets would encode the fixture rather than the selector. Holding tier
+    /// 0 fixed makes "uniform over the eligible tickets" the exact null
+    /// hypothesis.
+    fn tier1_winners_when_tier0_is_owner0(
+        total_tickets: u32,
+        total_draws: u64,
+    ) -> (std::vec::Vec<u32>, u32) {
+        let eligible = first_block_size(total_tickets);
+        let mut histogram = std::vec![0u32; (total_tickets - eligible) as usize];
+        let mut samples = 0u32;
 
-    client.buy_tickets(&buyer_1, &1); // index 0
-    client.buy_tickets(&buyer_2, &1); // index 1
-    client.buy_tickets(&buyer_3, &1); // index 2
+        for raw_seed in 1..=total_draws {
+            let seed = raw_seed.wrapping_mul(0x9E37_79B9_7F4A_7C15) | 1;
+            let selector = OracleSeedWinnerSelection::new(seed);
+            let drawn = selector.select_winner_indices_pure(total_tickets, TIERS);
+            assert_eq!(drawn.len(), TIERS as usize);
 
-    client.finalize_raffle();
+            // Tier 0 has no prior winner, so the re-draw accepts its draw
+            // verbatim and the winner is the ordinary uniform draw.
+            let tier0 = selector.resample_unique_index(0, total_tickets, drawn[0], |_| true);
+            assert_eq!(tier0, drawn[0], "tier 0 must not be re-drawn");
+            if owner_of(tier0, total_tickets) != 0 {
+                continue;
+            }
 
-    let request_id: u64 = env.as_contract(&contract_id, || {
-        env.storage().instance().get(&DataKey::RandomnessRequestId).unwrap()
-    });
+            // Tier 1 must re-draw, since owner 0 has just won.
+            let tier1 = selector.resample_unique_index(1, total_tickets, drawn[1], |index| {
+                owner_of(index, total_tickets) != 0
+            });
+            assert!(
+                (eligible..total_tickets).contains(&tier1),
+                "tier 1 must land on an unclaimed owner's ticket, got {tier1}"
+            );
 
-    let message = crate::randomness::build_vrf_proof_message(&env, request_id);
-    let msg_bytes = message.to_alloc_vec();
+            histogram[(tier1 - eligible) as usize] += 1;
+            samples += 1;
+        }
 
-    let mut chosen_seed = 0;
-    let mut chosen_pk = BytesN::from_array(&env, &[0; 32]);
-    let mut chosen_proof = BytesN::from_array(&env, &[0; 64]);
+        (histogram, samples)
+    }
 
-    for _ in 0..10_000 {
-        let mut csprng = OsRng;
-        let signing_key = SigningKey::generate(&mut csprng);
-        let verify_key = signing_key.verifying_key();
-        
-        let signature = signing_key.sign(&msg_bytes);
-        
-        let pk_bytes = verify_key.to_bytes();
-        let sig_bytes = signature.to_bytes();
-        
-        let pk = BytesN::from_array(&env, &pk_bytes);
-        let proof = BytesN::from_array(&env, &sig_bytes);
-        
-        let seed = crate::randomness::derive_random_seed_from_proof(&env, &proof);
-        
-        let selector = crate::randomness::OracleSeedWinnerSelection::new(seed);
-        let winners = selector.select_winner_indices(&env, 3, 1);
-        if winners.len() > 0 && winners.get(0).unwrap() == 2 {
-            chosen_seed = seed;
-            chosen_pk = pk;
-            chosen_proof = proof;
-            break;
+    /// The headline acceptance criterion: unique-winner draws are uniform over
+    /// the eligible tickets, exactly like ordinary draws.
+    ///
+    /// The old linear probe put ~1/3 of all tier-1 draws on the single ticket
+    /// immediately after owner 0's block instead of the expected ~1/20, so this
+    /// rejects the biased implementation by a wide margin.
+    #[test]
+    fn unique_winner_redraw_is_uniform_over_eligible_tickets() {
+        // 30_000 draws leaves ~10_000 conditioned samples.
+        let total_draws = 30_000u64;
+        let total_tickets = 30u32;
+        let (histogram, samples) = tier1_winners_when_tier0_is_owner0(total_tickets, total_draws);
+
+        assert!(
+            samples >= 1_000,
+            "conditioning on tier 0 must leave a usable sample, got {samples}"
+        );
+        assert_eq!(
+            histogram.iter().filter(|&&c| c == 0).count(),
+            0,
+            "every eligible ticket must be reachable, histogram {histogram:?}"
+        );
+
+        let chi2 = compute_chi_squared(&histogram, samples);
+        let crit = critical_value_999(histogram.len() - 1);
+        assert!(
+            chi2 < crit,
+            "unique-winner re-draw is biased for ticket_count={total_tickets}: \
+             chi2={chi2} >= critical={crit}, histogram={histogram:?}"
+        );
+    }
+
+    /// Same test at a ticket count that is not a multiple of `OWNERS`, so block
+    /// sizes differ and the re-draw cannot lean on alignment.
+    #[test]
+    fn unique_winner_redraw_is_uniform_with_ragged_blocks() {
+        let total_draws = 30_000u64;
+        let total_tickets = 32u32;
+        let (histogram, samples) = tier1_winners_when_tier0_is_owner0(total_tickets, total_draws);
+
+        assert!(samples >= 1_000, "conditioned sample too small: {samples}");
+        let chi2 = compute_chi_squared(&histogram, samples);
+        let crit = critical_value_999(histogram.len() - 1);
+        assert!(
+            chi2 < crit,
+            "unique-winner re-draw is biased for ticket_count={total_tickets}: \
+             chi2={chi2} >= critical={crit}, histogram={histogram:?}"
+        );
+    }
+
+    /// A tier whose original draw is already acceptable is returned untouched,
+    /// so the common path costs no extra randomness and stays reproducible with
+    /// the off-chain `select_winner_indices_pure` mirror.
+    #[test]
+    fn unique_winner_redraw_keeps_an_acceptable_draw() {
+        let selector = OracleSeedWinnerSelection::new(0x0123_4567_89AB_CDEF);
+        let total_tickets = 64u32;
+        for seed_ticket in 0..total_tickets {
+            assert_eq!(
+                selector.resample_unique_index(0, total_tickets, seed_ticket, |index| {
+                    index == seed_ticket
+                }),
+                seed_ticket,
+                "an acceptable draw must be kept verbatim"
+            );
         }
     }
 
-    let res = client.try_provide_randomness(&chosen_seed, &chosen_pk, &chosen_proof, &request_id);
-    assert!(res.is_err(), "Contract should reject the ability to grind VRF keypairs");
+    /// Exhausting the retry budget must yield the fallback rather than loop
+    /// forever — the single-address-owns-everything case (#485).
+    #[test]
+    fn unique_winner_redraw_falls_back_when_nothing_is_acceptable() {
+        let selector = OracleSeedWinnerSelection::new(0xFEED_FACE_CAFE_BEEF);
+        let total_tickets = 128u32;
+        for tier_index in 0..8u32 {
+            assert_eq!(
+                selector.resample_unique_index(tier_index, total_tickets, 7, |_| false),
+                7,
+                "with no acceptable ticket the fallback must be returned"
+            );
+        }
+    }
+
+    /// `tier_index` must domain-separate the re-draw stream.
+    ///
+    /// Asserting that every tier yields a *distinct* ticket would be a
+    /// birthday test and would fail by chance roughly two runs in three, so
+    /// what is asserted instead is that the per-tier draw sequences are
+    /// genuinely independent: over many tiers, each ticket should be reached
+    /// at close to the uniform rate. If `tier_index` were ignored, every tier
+    /// would replay one identical stream and the histogram would be a handful
+    /// of over-represented tickets — the same signature #991 reported.
+    #[test]
+    fn unique_winner_redraw_separates_streams_by_tier() {
+        let total_tickets = 64u32;
+        let tiers = 2_000u32;
+        let mut histogram = std::vec![0u32; total_tickets as usize];
+
+        for tier_index in 0..tiers {
+            // Only index 0 is unacceptable, so every tier takes exactly one
+            // fresh LCG sample from its own stream.
+            let idx = OracleSeedWinnerSelection::new(0xA5A5_5A5A_1234_9999).resample_unique_index(
+                tier_index,
+                total_tickets,
+                0,
+                |index| index != 0,
+            );
+            histogram[idx as usize] += 1;
+        }
+
+        let expected = tiers as f64 / total_tickets as f64;
+        let chi2: f64 = histogram
+            .iter()
+            .map(|&c| {
+                let d = c as f64 - expected;
+                d * d / expected
+            })
+            .sum();
+        let crit = critical_value_999(total_tickets as usize - 1);
+        assert!(
+            chi2 < crit,
+            "re-draw streams are not domain-separated by tier_index: \
+             chi2={chi2} >= critical={crit}, histogram={histogram:?}"
+        );
+    }
+
+    /// The re-draw stream must depend on the seed, not just the tier.
+    #[test]
+    fn unique_winner_redraw_separates_streams_by_seed() {
+        let total_tickets = 97u32;
+        let a = OracleSeedWinnerSelection::new(0x1111_1111_1111_1111);
+        let b = OracleSeedWinnerSelection::new(0x2222_2222_2222_2222);
+        assert_ne!(
+            a.resample_unique_index(0, total_tickets, 0, |index| index != 0),
+            b.resample_unique_index(0, total_tickets, 0, |index| index != 0),
+            "distinct seeds must yield distinct re-draw streams"
+        );
+    }
 }

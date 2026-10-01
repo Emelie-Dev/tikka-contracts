@@ -1,4 +1,4 @@
-import { Keypair } from '@stellar/stellar-sdk';
+import { Keypair, Transaction } from '@stellar/stellar-sdk';
 import { decodeSecretKey, zeroizeBuffer } from './secret-key';
 import { logger } from '../logging/logger';
 
@@ -10,17 +10,14 @@ export interface SecretsAdapter {
  * Adapter for loading secrets from environment variables.
  */
 export class EnvSecretsAdapter implements SecretsAdapter {
+  constructor(private readonly environment: Record<string, string | undefined> = {}) {}
+
   async getSecret(key: string): Promise<Buffer> {
-    if (process.env['NODE_ENV'] === 'production') {
-      throw new Error('Security violation: EnvSecretsAdapter is not allowed in production environment');
-    }
-    const secret = process.env[key];
+    const secret = this.environment[key];
     if (!secret) {
-      throw new Error('ORACLE_SECRET_KEY env var not set');
+      throw new Error(`${key} env var not set`);
     }
-    const buf = Buffer.from(secret);
-    delete process.env[key]; // clean up env var to avoid exposure
-    return buf;
+    return Buffer.from(secret);
   }
 }
 
@@ -75,7 +72,7 @@ export class KeyService {
   /**
    * Signs a Stellar Transaction directly without exposing the keypair.
    */
-  signTransaction(tx: any): void {
+  signTransaction(tx: Transaction): void {
     this.ensureInitialized();
     tx.sign(this.keypair);
   }

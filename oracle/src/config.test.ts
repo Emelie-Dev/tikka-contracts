@@ -29,6 +29,9 @@ describe('loadAndValidateConfig', () => {
     delete process.env['ALERT_QUEUE_DEPTH_LIMIT'];
     delete process.env['ALERT_QUEUE_AGE_LIMIT_MS'];
     delete process.env['ALERT_RPC_UNREACHABLE_THRESHOLD'];
+    delete process.env['ORACLE_RETRY_BASE_MS'];
+    delete process.env['ORACLE_RETRY_MAX_MS'];
+    delete process.env['ORACLE_RETRY_MAX_ATTEMPTS'];
 
     exitSpy = jest.spyOn(process, 'exit').mockImplementation(((code?: number) => {
       throw new Error(`process.exit:${code ?? 0}`);
@@ -76,6 +79,20 @@ describe('loadAndValidateConfig', () => {
     expect(config.alertQueueDepthLimit).toBe(10);
     expect(config.alertQueueAgeLimitMs).toBe(300_000);
     expect(config.alertRpcUnreachableThreshold).toBe(3);
+    expect(config.retryPolicy).toEqual({ baseMs: 500, maxMs: 30000, maxAttempts: 5 });
+  });
+
+  it('reads retry policy config from env', () => {
+    process.env['ORACLE_SECRET_KEY'] = Keypair.random().secret();
+    process.env['STELLAR_RPC_URL'] = 'https://soroban-testnet.stellar.org';
+    process.env['FACTORY_CONTRACT_ID'] = 'CAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAHK3M';
+    process.env['ORACLE_RETRY_BASE_MS'] = '250';
+    process.env['ORACLE_RETRY_MAX_MS'] = '15000';
+    process.env['ORACLE_RETRY_MAX_ATTEMPTS'] = '2';
+
+    const config = loadAndValidateConfig();
+
+    expect(config.retryPolicy).toEqual({ baseMs: 250, maxMs: 15000, maxAttempts: 2 });
   });
 
   it('reads ALERT_* config from env', () => {

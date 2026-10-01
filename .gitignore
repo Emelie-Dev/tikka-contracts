@@ -9,6 +9,8 @@ target/
 node_modules/
 oracle/node_modules/
 oracle/dist/
+oracle/coverage/
+coverage/lcov.info
 
 # Local Stellar/Soroban settings and deployments
 .soroban/
@@ -64,6 +66,6 @@ error*.txt
 # Agent / scratch artefacts
 patch_*.txt
 scratch_*.rs
-test_*.rs
+/test_*.rs
 update_*.py
 inject_*.py

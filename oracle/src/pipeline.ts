@@ -5,16 +5,20 @@ import { KeyService } from './keys/key.service';
 import { VrfService } from './vrf/vrf.service';
 import { TxSubmitterService } from './tx/tx-submitter.service';
 import { DeduplicationStore } from './deduplication/deduplication.store';
+import { DeadLetterStore } from './queue/dead-letter.store';
 import { GracefulShutdown } from './shutdown/graceful-shutdown';
 import { Alerter } from './alert/alerter';
 import { OracleConfig } from './config';
 import { QuorumService } from './quorum/quorum.service';
+import { childLogger } from './logging/logger';
+import { oracleDeadLetterTotal } from './metrics';
 
 export interface PipelineOptions {
   config: OracleConfig;
   alerter: Alerter;
-  checkpointStore?: LedgerCheckpointStore;
-  dedupStore?: DeduplicationStore;
+  checkpointStore?: LedgerCheckpointStore | undefined;
+  dedupStore?: DeduplicationStore | undefined;
+  deadLetterStore?: DeadLetterStore | undefined;
 }
 
 export class OraclePipeline {
@@ -25,15 +29,16 @@ export class OraclePipeline {
   private readonly txSubmitter: TxSubmitterService;
   private readonly dedupStore: DeduplicationStore;
   private readonly checkpointStore: LedgerCheckpointStore;
+  private readonly deadLetterStore: DeadLetterStore;
   private readonly gracefulShutdown: GracefulShutdown;
   private readonly alerter: Alerter;
   private readonly config: OracleConfig;
-  private quorumService!: QuorumService;
+  private quorumService?: QuorumService;
 
   private running = false;
 
   constructor(options: PipelineOptions) {
-    const { config, alerter, checkpointStore, dedupStore } = options;
+    const { config, alerter, checkpointStore, dedupStore, deadLetterStore } = options;
 
     this.config = config;
     this.alerter = alerter;
@@ -48,8 +53,17 @@ export class OraclePipeline {
     // Initialize deduplication store
     this.dedupStore = dedupStore ?? new DeduplicationStore('./data/dedup.json');
 
-    // Initialize request queue
-    this.requestQueue = new RequestQueue();
+    // Initialize dead-letter store
+    this.deadLetterStore = deadLetterStore ?? new DeadLetterStore('./data/dead-letter.json');
+
+    // Initialize request queue with dead-letter store and limits from config
+    this.requestQueue = new RequestQueue({
+      alerter: this.alerter,
+      deadLetterStore: this.deadLetterStore,
+      depthLimit: config.alertQueueDepthLimit,
+      ageLimitMs: config.alertQueueAgeLimitMs,
+      maxAttempts: config.queueMaxAttempts,
+    });
 
     // Initialize VRF service
     this.vrfService = new VrfService(this.keyService);
@@ -59,6 +73,7 @@ export class OraclePipeline {
       rpcUrl: config.rpcUrl,
       alerter: this.alerter,
       failureThreshold: config.alertFailureThreshold,
+      retryPolicy: config.retryPolicy,
     });
 
     // Initialize event listener (public key will be available after initialize)
@@ -127,8 +142,8 @@ export class OraclePipeline {
 
     // Register graceful shutdown handlers
     this.gracefulShutdown.register(() => this.eventListener.stopListening());
-
-
+    // Zeroize key material after all signing work is done but before exit.
+    this.gracefulShutdown.registerShutdownHook(() => this.keyService.shutdown());
 
     this.running = true;
     // Start processing jobs from the queue
@@ -151,6 +166,10 @@ export class OraclePipeline {
     }
 
     try {
+      if (!this.quorumService) {
+        throw new Error('Pipeline is not initialized: QuorumService is unavailable');
+      }
+
       // Check if we participate in Quorum or Single Oracle
       const quorumCheck = await this.quorumService.checkQuorumParticipation(raffleContract);
       
@@ -173,8 +192,7 @@ export class OraclePipeline {
         // External (single oracle) mode!
         console.log(`Processing single-oracle VRF randomness request for raffle=${raffleContract} requestId=${requestId}`);
         
-        const randomSeed = Date.now(); // In production, this should come from a secure source
-        const proof = this.vrfService.signRandomnessProof(raffleContract, requestId, BigInt(randomSeed));
+        const proof = this.vrfService.signRandomnessProof(raffleContract, requestId);
 
         // Submit transaction
         const txHash = await this.txSubmitter.submitProvideRandomness({
@@ -207,11 +225,37 @@ export class OraclePipeline {
       }
 
       for (const job of jobs) {
+        const { requestId, raffleContract } = job;
+        const jobLogger = childLogger({ requestId: requestId.toString(), raffleId: raffleContract });
+
         try {
           await this.processJob(job);
         } catch (error) {
-          queueLogger.error('Error processing job:', error);
-          // Job will be retried on next restart if not marked as duplicate
+          const errorMessage = error instanceof Error ? error.message : String(error);
+          jobLogger.error('Error processing job:', error);
+
+          const outcome = this.requestQueue.recordFailure(
+            raffleContract,
+            requestId,
+            errorMessage,
+          );
+
+          if (outcome === 'dead_lettered') {
+            oracleDeadLetterTotal.inc();
+            if (this.alerter) {
+              void this.alerter.notify({
+                type: 'dead_letter',
+                severity: 'critical',
+                bypassRateLimit: true,
+                message: `Randomness request dead-lettered: raffle=${raffleContract} requestId=${requestId}`,
+                details: {
+                  raffleContract,
+                  requestId: requestId.toString(),
+                  error: errorMessage,
+                },
+              });
+            }
+          }
         }
       }
     }
@@ -222,6 +266,14 @@ export class OraclePipeline {
     this.running = false;
     await this.gracefulShutdown.shutdown();
   }
+
+  async processJobForShutdown(job: {
+    requestId: bigint;
+    raffleContract: string;
+    timestamp: bigint;
+  }): Promise<boolean> {
+    return this.processJob(job);
+  }
 }
 
 export function createPipeline(config: OracleConfig, options: Partial<PipelineOptions> & { alerter: Alerter }): OraclePipeline {
@@ -230,7 +282,6 @@ export function createPipeline(config: OracleConfig, options: Partial<PipelineOp
     alerter: options.alerter,
     checkpointStore: options.checkpointStore,
     dedupStore: options.dedupStore,
+    deadLetterStore: options.deadLetterStore,
   });
 }
-
-

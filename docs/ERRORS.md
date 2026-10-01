@@ -1,6 +1,6 @@
 # Error Codes
 
-This document is **auto-generated** from the contract error enums. **Do not
+This document is **auto-generated** from `ProtocolError`. **Do not
 edit by hand.** Regenerate whenever error codes or descriptions change:
 
 ```bash
@@ -8,10 +8,10 @@ python scripts/generate_error_docs.py
 ```
 
 Sources of truth:
-- Instance errors: `Error` in
-  [`contracts/raffle-instance/src/lib.rs`](contracts/raffle-instance/src/lib.rs).
-- Factory errors: `ContractError` in
-  [`contracts/raffle-factory/src/lib.rs`](contracts/raffle-factory/src/lib.rs).
+- Canonical catalog: `ProtocolError` in
+  [`contracts/raffle-shared/src/errors.rs`](contracts/raffle-shared/src/errors.rs).
+- Factory ABI codes remain unchanged; the catalog records them next to each
+  namespaced factory code.
 
 ---
 
@@ -63,7 +63,6 @@ Sources of truth:
 | 57 | `PrizeConfigurationLocked` | Prize configuration is locked | "Prize configuration is locked" |
 | 58 | `ExceedsMaxTicketsPerTx` | Exceeds max tickets per transaction | "Too many tickets for one transaction" |
 | 59 | `DrawingAlreadyInProgress` | A draw is already in progress | "Drawing already in progress" |
-| 60 | `InvalidStatusForDrawingTransition` | Raffle status cannot enter Drawing | "Cannot start drawing in current state" |
 | 61 | `DrawingAlreadyComplete` | Randomness was already provided | "Drawing already complete" |
 | 62 | `InvalidEndTime` | Raffle end time is invalid | "Invalid raffle end time" |
 | 63 | `InvalidAdminAddress` | Admin address is invalid | "Invalid admin address" |
@@ -73,6 +72,7 @@ Sources of truth:
 | 67 | `ExceedsMaxTicketsPerAddress` | Exceeds the per-address ticket cap | "This address has reached the ticket limit" |
 | 68 | `OracleNotRegistered` | Caller is not a registered oracle for this raffle | "Caller is not a registered oracle for this raffle" |
 | 69 | `DuplicateOracleSubmission` | This oracle has already submitted its seed | "This oracle has already submitted its seed" |
+| 70 | `CommitAlreadySubmitted` | A commit has already been submitted for this draw | "This oracle has already committed for this draw" |
 
 ---
 
@@ -99,6 +99,8 @@ Sources of truth:
 | 22 | `MaxRoundsReached` | Maximum rounds reached | "Maximum rounds reached" |
 | 23 | `RecurringInactive` | Recurring raffle is inactive | "Recurring raffle is inactive" |
 | 24 | `CreationPaused` | Raffle creation is paused | "Raffle creation is paused" |
+| 25 | `CallerNotRegisteredRaffle` | Caller is not a raffle registered by this factory | "Caller is not a registered raffle" |
+| 26 | `RandomnessSourceTooWeakForPrize` | Randomness source is too weak for the configured prize | "Randomness source is too weak for this prize" |
 
 ---
 
@@ -150,7 +152,6 @@ const errorMessages: Record<number, string> = {
   57: "Prize configuration is locked",
   58: "Too many tickets for one transaction",
   59: "Drawing already in progress",
-  60: "Cannot start drawing in current state",
   61: "Drawing already complete",
   62: "Invalid raffle end time",
   63: "Invalid admin address",
@@ -160,5 +161,6 @@ const errorMessages: Record<number, string> = {
   67: "This address has reached the ticket limit",
   68: "Caller is not a registered oracle for this raffle",
   69: "This oracle has already submitted its seed",
+  70: "This oracle has already committed for this draw",
 };
 ```

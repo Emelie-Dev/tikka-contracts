@@ -62,6 +62,7 @@ pub fn setup(
         prizes: Vec::from_array(env, [10_000]),
         randomness_source: RandomnessSource::Internal,
         oracle_address: None,
+        oracle_public_key: None,
         protocol_fee_bp: 0,
         treasury_address: None,
         swap_router: None,
