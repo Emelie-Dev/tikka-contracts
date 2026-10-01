@@ -42,7 +42,7 @@ fn test_create_recurring_raffle_increments_id() {
 }
 
 #[test]
-fn test_create_recurring_raffle_rejects_invalid_interval() {
+fn test_create_recurring_raffle_interval_bounds_enforced_at_both_ends() {
     let env = Env::default();
     env.mock_all_auths();
     env.ledger().set_timestamp(1_000_000);
@@ -51,42 +51,41 @@ fn test_create_recurring_raffle_rejects_invalid_interval() {
     let token = make_token(&env);
     let base = valid_base_config(&env, &token);
 
-    let too_short = RecurringRaffleConfig {
-        interval_seconds: 3_599,
+    // 1. Below minimum bound (< 3,600s): must fail
+    let below_min = RecurringRaffleConfig {
+        interval_seconds: MIN_RECURRING_INTERVAL_SECONDS - 1,
         ..recurring_config(&env, base.clone())
     };
     assert_eq!(
-        client.try_create_recurring_raffle(&creator, &too_short),
+        client.try_create_recurring_raffle(&creator, &below_min),
         Err(Ok(ContractError::InvalidParameters))
     );
 
-    let too_long = RecurringRaffleConfig {
-        interval_seconds: 31_536_001,
+    // 2. Exact minimum bound (3,600s): must succeed
+    let exact_min = RecurringRaffleConfig {
+        interval_seconds: MIN_RECURRING_INTERVAL_SECONDS,
+        ..recurring_config(&env, base.clone())
+    };
+    let min_id = client.create_recurring_raffle(&creator, &exact_min);
+    let min_entry = client.get_recurring_raffle(&min_id).expect("entry exists");
+    assert_eq!(min_entry.config.interval_seconds, MIN_RECURRING_INTERVAL_SECONDS);
+
+    // 3. Exact maximum bound (31,536,000s): must succeed
+    let exact_max = RecurringRaffleConfig {
+        interval_seconds: MAX_RECURRING_INTERVAL_SECONDS,
+        ..recurring_config(&env, base.clone())
+    };
+    let max_id = client.create_recurring_raffle(&creator, &exact_max);
+    let max_entry = client.get_recurring_raffle(&max_id).expect("entry exists");
+    assert_eq!(max_entry.config.interval_seconds, MAX_RECURRING_INTERVAL_SECONDS);
+
+    // 4. Above maximum bound (> 31,536,000s): must fail
+    let above_max = RecurringRaffleConfig {
+        interval_seconds: MAX_RECURRING_INTERVAL_SECONDS + 1,
         ..recurring_config(&env, base)
     };
     assert_eq!(
-        client.try_create_recurring_raffle(&creator, &too_long),
-        Err(Ok(ContractError::InvalidParameters))
-    );
-}
-
-#[test]
-fn test_create_recurring_raffle_rejects_auto_fund_infinite() {
-    let env = Env::default();
-    env.mock_all_auths();
-    env.ledger().set_timestamp(1_000_000);
-    let (client, _admin, _treasury) = setup_factory(&env);
-    let creator = Address::generate(&env);
-    let token = make_token(&env);
-    let base = valid_base_config(&env, &token);
-
-    let bad = RecurringRaffleConfig {
-        max_rounds: 0,
-        auto_fund: true,
-        ..recurring_config(&env, base)
-    };
-    assert_eq!(
-        client.try_create_recurring_raffle(&creator, &bad),
+        client.try_create_recurring_raffle(&creator, &above_max),
         Err(Ok(ContractError::InvalidParameters))
     );
 }
@@ -119,6 +118,35 @@ fn test_trigger_next_round() {
     let instances = client.get_recurring_instances(&recurring_id);
     assert_eq!(instances.len(), 1u32);
     assert_eq!(instances.get(0).unwrap(), addr);
+}
+
+#[test]
+fn test_trigger_next_round_permissionless_authorization() {
+    let env = Env::default();
+    // Intentionally do NOT mock all auths upfront so we verify trigger_next_round requires no auth
+    env.ledger().set_timestamp(1_000_000);
+    let (client, _admin, _treasury) = setup_factory(&env);
+    let creator = Address::generate(&env);
+    let token = make_token(&env);
+    let base = valid_base_config(&env, &token);
+
+    env.mock_all_auths();
+    let recurring_id = client.create_recurring_raffle(
+        &creator,
+        &recurring_config(&env, base),
+    );
+
+    // Advance time past next_due
+    env.ledger().set_timestamp(1_000_000 + 86_400);
+
+    // Any caller can trigger the round without creator auth
+    let addr = client.trigger_next_round(&recurring_id);
+
+    let entry = client
+        .get_recurring_raffle(&recurring_id)
+        .expect("entry exists");
+    assert_eq!(entry.current_round, 1);
+    assert_eq!(entry.last_raffle_address, Some(addr));
 }
 
 #[test]
@@ -348,15 +376,19 @@ fn test_infinite_recurring_raffle() {
     };
     let recurring_id = client.create_recurring_raffle(&creator, &infinite);
 
-    for round in 1..=5 {
+    for round in 1..=10 {
         env.ledger().set_timestamp(1_000_000 + 86_400 * round as u64);
-        client.trigger_next_round(&recurring_id);
+        let addr = client.trigger_next_round(&recurring_id);
+        let instances = client.get_recurring_instances(&recurring_id);
+        assert_eq!(instances.len(), round as u32);
+        assert_eq!(instances.get(round - 1).unwrap(), addr);
     }
 
     let entry = client
         .get_recurring_raffle(&recurring_id)
         .expect("entry exists");
-    assert_eq!(entry.current_round, 5);
+    assert_eq!(entry.current_round, 10);
+    assert!(entry.active);
 }
 
 #[test]

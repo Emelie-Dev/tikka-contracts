@@ -33,19 +33,19 @@ describe('KeyService', () => {
   });
 
   it('loads and validates the key on startup', async () => {
-    const service = new KeyService();
+    const service = new KeyService(new EnvSecretsAdapter(process.env));
     await service.initialize();
     expect(service.getPublicKey()).toBe(keypair.publicKey());
   });
 
   it('fails startup when the secret is missing', async () => {
     delete process.env['ORACLE_SECRET_KEY'];
-    const service = new KeyService();
+    const service = new KeyService(new EnvSecretsAdapter(process.env));
     await expect(service.initialize()).rejects.toThrow('KeyService initialization failed.');
   });
 
   it('signs and verifies a message with the loaded key', async () => {
-    const service = new KeyService();
+    const service = new KeyService(new EnvSecretsAdapter(process.env));
     await service.initialize();
 
     const message = Buffer.from('oracle-proof-message');
@@ -55,12 +55,12 @@ describe('KeyService', () => {
   });
 
   it('never exposes the secret in error messages', async () => {
-    const service = new KeyService(new EnvSecretsAdapter(), 'MISSING_SECRET');
+    const service = new KeyService(new EnvSecretsAdapter(process.env), 'MISSING_SECRET');
     await expect(service.initialize()).rejects.toThrow('KeyService initialization failed.');
   });
 
   it('zeroizes secret bytes on shutdown', async () => {
-    const service = new KeyService();
+    const service = new KeyService(new EnvSecretsAdapter(process.env));
     await service.initialize();
 
     // Capture a reference to the internal secretBytes buffer before shutdown.
@@ -84,7 +84,7 @@ describe('KeyService', () => {
   });
 
   it('allows two sequential initialisations without deleting env var', async () => {
-    const adapter = new EnvSecretsAdapter();
+    const adapter = new EnvSecretsAdapter(process.env);
     const secret1 = await adapter.getSecret('ORACLE_SECRET_KEY');
     const secret2 = await adapter.getSecret('ORACLE_SECRET_KEY');
     expect(secret1.toString('hex')).toBe(secret2.toString('hex'));
@@ -92,7 +92,7 @@ describe('KeyService', () => {
   });
 
   it('names the missing variable in EnvSecretsAdapter error message', async () => {
-    const adapter = new EnvSecretsAdapter();
+    const adapter = new EnvSecretsAdapter(process.env);
     await expect(adapter.getSecret('CUSTOM_VAR')).rejects.toThrow('CUSTOM_VAR env var not set');
   });
 });
@@ -142,8 +142,9 @@ describe('VaultSecretsAdapter', () => {
       statusText: 'Forbidden',
     } as any);
 
-    await expect(adapter.getSecret('secret/oracle')).rejects.toThrow('Failed to fetch secret from Vault');
+    await expect(adapter.getSecret('secret/oracle')).rejects.toThrow(
+      'Failed to fetch secret from Vault'
+    );
     fetchSpy.mockRestore();
   });
 });
-

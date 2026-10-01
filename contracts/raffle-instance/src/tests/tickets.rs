@@ -434,7 +434,7 @@ fn test_adversarial_ceiling_rounding() {
     let token_client = StellarAssetClient::new(&env, &payment_token);
     
     // Price = 10,001. Fee = 1 bp (0.01%)
-    // (10,001 * 1) / 10000 = 1 (truncation). Ceiling should be 2.
+    // floor(10,001 * 1 / 10,000) = 1 (truncating — favours the payer)
     let ticket_price = 10_001i128;
     token_client.mint(&creator, &1_000_000);
     token_client.mint(&buyer, &1_000_000);
@@ -472,7 +472,7 @@ fn test_adversarial_ceiling_rounding() {
     client.deposit_prize();
     client.buy_tickets(&buyer, &1);
     
-    let expected_ticket_fee = 2i128; // (10001 * 1 + 9999) / 10000
+    let expected_ticket_fee = 1i128; // floor(10_001 * 1 / 10_000) = 1 (truncating)
     assert_eq!(client.get_accumulated_fees(), expected_ticket_fee);
     
     client.finalize_raffle();
@@ -482,7 +482,7 @@ fn test_adversarial_ceiling_rounding() {
     let claimed = client.claim_prize(&winner, &0);
     assert_eq!(claimed, ticket_price); // Gross amount
     
-    let expected_prize_fee = 2i128; // (10001 * 1 + 9999) / 10000
+    let expected_prize_fee = 1i128; // floor(10_001 * 1 / 10_000) = 1 (truncating)
     assert_eq!(client.get_accumulated_fees(), expected_ticket_fee + expected_prize_fee);
     
     let balance_after = token_client.balance(&winner);

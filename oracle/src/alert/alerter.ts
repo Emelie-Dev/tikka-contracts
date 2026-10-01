@@ -28,8 +28,8 @@ export class Alerter {
   private readonly lastSentAt: Map<string, number> = new Map();
 
   constructor(options: AlerterOptions = {}) {
-    this.webhookUrl = options.webhookUrl ?? process.env['ALERT_WEBHOOK_URL'] ?? '';
-    const rawRateLimit = options.rateLimitMs ?? Number(process.env['ALERT_RATE_LIMIT_MS'] ?? 60_000);
+    this.webhookUrl = options.webhookUrl ?? '';
+    const rawRateLimit = options.rateLimitMs ?? 60_000;
     this.rateLimitMs = Number.isFinite(rawRateLimit) && rawRateLimit >= 0 ? rawRateLimit : 60_000;
     this.fetchImpl =
       options.fetchImpl ??
@@ -50,7 +50,7 @@ export class Alerter {
    * dead-letter entries — each represents a stalled raffle).
    */
   async notify(
-    alert: Omit<AlertPayload, 'timestamp'> & { bypassRateLimit?: boolean },
+    alert: Omit<AlertPayload, 'timestamp'> & { bypassRateLimit?: boolean }
   ): Promise<boolean> {
     if (!this.enabled) {
       return false;
@@ -87,7 +87,7 @@ export class Alerter {
       }
     } catch (error) {
       logger.error(
-        `Alert delivery failed: ${error instanceof Error ? error.message : String(error)}`,
+        `Alert delivery failed: ${error instanceof Error ? error.message : String(error)}`
       );
     }
 
@@ -128,10 +128,11 @@ function assertNoSecrets(value: unknown): void {
         lowerKey === 'secret' ||
         lowerKey.includes('oracle_secret')
       ) {
-        throw new Error(`Security assertion failed: Secret key field "${key}" detected in alert payload`);
+        throw new Error(
+          `Security assertion failed: Secret key field "${key}" detected in alert payload`
+        );
       }
       assertNoSecrets((value as Record<string, unknown>)[key]);
     }
   }
 }
-

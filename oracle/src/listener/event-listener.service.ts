@@ -42,16 +42,12 @@ export class EventListenerService {
     private readonly checkpointStore: LedgerCheckpointStore,
     options: EventListenerOptions = {}
   ) {
-    const rpcUrl =
-      options.rpcUrl ?? process.env['STELLAR_RPC_URL'] ?? 'https://soroban-testnet.stellar.org';
+    const rpcUrl = options.rpcUrl ?? 'https://soroban-testnet.stellar.org';
     this.server = new SorobanRpc.Server(rpcUrl, { allowHttp: rpcUrl.startsWith('http://') });
-    this.pollIntervalMs =
-      options.pollIntervalMs ?? Number(process.env['ORACLE_POLL_INTERVAL_MS'] ?? 5000);
+    this.pollIntervalMs = options.pollIntervalMs ?? 5000;
     this.sleep = options.sleep ?? ((ms) => new Promise((resolve) => setTimeout(resolve, ms)));
     this.alerter = options.alerter;
-    this.rpcUnreachableThreshold =
-      options.rpcUnreachableThreshold ??
-      Number(process.env['ALERT_RPC_UNREACHABLE_THRESHOLD'] ?? 3);
+    this.rpcUnreachableThreshold = options.rpcUnreachableThreshold ?? 3;
     this.startLedger = 1;
   }
 
@@ -82,10 +78,12 @@ export class EventListenerService {
             {
               type: 'contract',
               contractIds,
-              topics: [[
-                xdr.ScVal.scvSymbol('RandomnessRequested').toXDR('base64'),
-                xdr.ScVal.scvSymbol('OracleSeedDelivered').toXDR('base64')
-              ]],
+              topics: [
+                [
+                  xdr.ScVal.scvSymbol('RandomnessRequested').toXDR('base64'),
+                  xdr.ScVal.scvSymbol('OracleSeedDelivered').toXDR('base64'),
+                ],
+              ],
             },
           ],
         });
@@ -110,8 +108,8 @@ export class EventListenerService {
           if (parsedDelivered) {
             console.log(
               `OracleSeedDelivered event received: raffle=${parsedDelivered.raffleContract} ` +
-              `oracle=${parsedDelivered.oracle} request_id=${parsedDelivered.requestId} ` +
-              `count=${parsedDelivered.currentCount}/${parsedDelivered.threshold}`
+                `oracle=${parsedDelivered.oracle} request_id=${parsedDelivered.requestId} ` +
+                `count=${parsedDelivered.currentCount}/${parsedDelivered.threshold}`
             );
           }
           continue;
@@ -203,7 +201,13 @@ export class EventListenerService {
 
   parseOracleSeedDeliveredEvent(
     event: SorobanRpc.Api.EventResponse
-  ): { oracle: string; requestId: bigint; currentCount: number; threshold: number; raffleContract: string } | null {
+  ): {
+    oracle: string;
+    requestId: bigint;
+    currentCount: number;
+    threshold: number;
+    raffleContract: string;
+  } | null {
     const topicName = event.topic[0]?.sym?.().toString();
     if (topicName !== 'OracleSeedDelivered') {
       return null;

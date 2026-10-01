@@ -77,7 +77,7 @@ pub struct DrawAttestation {
 /// // and compares results with attestation.winner_addresses
 /// ```
 ///
-/// See also: [`docs/RANDOMNESS.md`](../../../../docs/RANDOMNESS.md) — verification
+/// See also: [`docs/RANDOMNESS.md`](../../../docs/RANDOMNESS.md) — verification
 /// procedure.
 pub(crate) fn get_draw_attestation(env: &Env) -> Result<DrawAttestation, Error> {
     let raffle = read_raffle(env)?;

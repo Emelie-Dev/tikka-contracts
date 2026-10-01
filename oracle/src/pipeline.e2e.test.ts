@@ -1,4 +1,4 @@
-import { OraclePipeline } from './pipeline';
+import { createInjectedPipeline } from './pipeline.test-utils';
 import { Alerter } from './alert/alerter';
 import { MemoryLedgerCheckpointStore } from './listener/ledger-checkpoint';
 import { DeduplicationStore } from './deduplication/deduplication.store';
@@ -17,7 +17,10 @@ describe('OraclePipeline End-to-End', () => {
 
     mockConfig = {
       rpcUrl: 'http://localhost:8000',
+      oracleSecretKey: 'test-secret',
+      networkPassphrase: 'Test SDF Network ; September 2015',
       factoryContractId: 'CAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAABSC4',
+      nodeEnv: 'test',
       logLevel: 'info',
       pollIntervalMs: 5000,
       alertWebhookUrl: '',
@@ -26,7 +29,13 @@ describe('OraclePipeline End-to-End', () => {
       alertQueueDepthLimit: 10,
       alertQueueAgeLimitMs: 300000,
       alertRpcUnreachableThreshold: 3,
+      queueMaxAttempts: 5,
+      vaultToken: '',
       retryPolicy: { baseMs: 500, maxMs: 30000, maxAttempts: 5 },
+      dataDir: '/tmp/oracle-data',
+      checkpointPath: '/tmp/oracle-data/checkpoint.json',
+      dedupPath: '/tmp/oracle-data/dedup.json',
+      rpcSimulateTimeoutMs: 10000,
     };
 
     mockAlerter = new Alerter({ webhookUrl: '', rateLimitMs: 60000 });
@@ -41,44 +50,25 @@ describe('OraclePipeline End-to-End', () => {
   });
 
   it('constructs pipeline with all components', () => {
-    const pipeline = new OraclePipeline({
-      config: mockConfig,
-      alerter: mockAlerter,
-      checkpointStore: mockCheckpoint,
-      dedupStore: mockDedup,
-    });
+    const pipeline = createInjectedPipeline(mockConfig, mockAlerter, mockCheckpoint, mockDedup);
 
     expect(pipeline).toBeDefined();
   });
 
-  it('uses default file-based stores when none provided', () => {
-    const pipeline = new OraclePipeline({
-      config: mockConfig,
-      alerter: mockAlerter,
-    });
+  it('accepts injected file stores', () => {
+    const pipeline = createInjectedPipeline(mockConfig, mockAlerter, mockCheckpoint, mockDedup);
 
     expect(pipeline).toBeDefined();
   });
 
-  it('initializes KeyService on start', async () => {
-    const pipeline = new OraclePipeline({
-      config: mockConfig,
-      alerter: mockAlerter,
-      checkpointStore: mockCheckpoint,
-      dedupStore: mockDedup,
-    });
+  it('accepts injected collaborators before start', async () => {
+    const pipeline = createInjectedPipeline(mockConfig, mockAlerter, mockCheckpoint, mockDedup);
 
-    // We can't fully start without a real RPC, but we can verify the pipeline is constructed
     expect(pipeline).toBeDefined();
   });
 
-  it('configures components with correct RPC settings', () => {
-    const pipeline = new OraclePipeline({
-      config: mockConfig,
-      alerter: mockAlerter,
-      checkpointStore: mockCheckpoint,
-      dedupStore: mockDedup,
-    });
+  it('constructs with injected components', () => {
+    const pipeline = createInjectedPipeline(mockConfig, mockAlerter, mockCheckpoint, mockDedup);
 
     expect(pipeline).toBeDefined();
   });

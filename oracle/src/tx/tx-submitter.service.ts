@@ -1,7 +1,6 @@
 import {
   Account,
   Contract,
-  Networks,
   rpc as SorobanRpc,
   TransactionBuilder,
   nativeToScVal,
@@ -56,19 +55,16 @@ export class TxSubmitterService {
 
   constructor(
     private readonly keyService: KeyService,
-    options: TxSubmitterOptions | string = {},
+    options: TxSubmitterOptions | string = {}
   ) {
     if (typeof options === 'string') {
       options = { rpcUrl: options };
     }
-    const rpcUrl =
-      options.rpcUrl ?? process.env['STELLAR_RPC_URL'] ?? 'https://soroban-testnet.stellar.org';
+    const rpcUrl = options.rpcUrl ?? 'https://soroban-testnet.stellar.org';
     this.server = new SorobanRpc.Server(rpcUrl, { allowHttp: rpcUrl.startsWith('http://') });
-    this.networkPassphrase =
-      options.networkPassphrase ?? process.env['STELLAR_NETWORK_PASSPHRASE'] ?? Networks.TESTNET;
+    this.networkPassphrase = options.networkPassphrase ?? 'Test SDF Network ; September 2015';
     this.alerter = options.alerter;
-    this.failureThreshold =
-      options.failureThreshold ?? Number(process.env['ALERT_FAILURE_THRESHOLD'] ?? 3);
+    this.failureThreshold = options.failureThreshold ?? 3;
     this.sleepImpl = options.sleep ?? ((ms) => new Promise((resolve) => setTimeout(resolve, ms)));
     this.retryPolicy = new RetryPolicy(options.retryPolicy);
   }
@@ -121,7 +117,12 @@ export class TxSubmitterService {
   }
 
   /** Convenience wrapper that forwards queue job metadata for latency metrics. */
-  async submitJob(job: RandomnessJob, randomSeed: bigint, publicKey: Uint8Array, proof: Uint8Array): Promise<string> {
+  async submitJob(
+    job: RandomnessJob,
+    randomSeed: bigint,
+    publicKey: Uint8Array,
+    proof: Uint8Array
+  ): Promise<string> {
     return this.submitProvideRandomness({
       raffleContract: job.raffleContract,
       randomSeed,

@@ -1,12 +1,15 @@
 import path from 'path';
-import { Keypair } from '@stellar/stellar-sdk';
+import { Keypair, Networks } from '@stellar/stellar-sdk';
 import { decodeSecretKey } from './keys/secret-key';
 import { logger } from './logging/logger';
 import { RetryPolicyOptions } from './tx/retry-policy';
 
 export interface OracleConfig {
+  oracleSecretKey: string;
   rpcUrl: string;
+  networkPassphrase: string;
   factoryContractId: string;
+  nodeEnv: string;
   logLevel: string;
   pollIntervalMs: number;
   healthPort: number;
@@ -19,6 +22,8 @@ export interface OracleConfig {
   alertQueueDepthLimit: number;
   alertQueueAgeLimitMs: number;
   alertRpcUnreachableThreshold: number;
+  queueMaxAttempts: number;
+  vaultToken: string;
   retryPolicy: RetryPolicyOptions;
   /** Absolute path to the directory used for checkpoint and dedup state files. */
   dataDir: string;
@@ -71,6 +76,13 @@ function isValidSecretKey(secret: string): boolean {
 export function loadAndValidateConfig(): OracleConfig {
   const errors: string[] = [];
 
+  const oracleSecretKey = process.env['ORACLE_SECRET_KEY'];
+  if (!oracleSecretKey) {
+    errors.push('ORACLE_SECRET_KEY is required');
+  } else if (!isValidSecretKey(oracleSecretKey)) {
+    errors.push('ORACLE_SECRET_KEY is invalid');
+  }
+
   const rpcUrl = process.env['STELLAR_RPC_URL'];
   if (!rpcUrl) {
     errors.push('STELLAR_RPC_URL is required');
@@ -80,6 +92,9 @@ export function loadAndValidateConfig(): OracleConfig {
   if (!factoryContractId) {
     errors.push('FACTORY_CONTRACT_ID is required');
   }
+
+  const networkPassphrase = process.env['STELLAR_NETWORK_PASSPHRASE'] ?? Networks.TESTNET;
+  const nodeEnv = process.env['NODE_ENV'] ?? 'development';
 
   const rawPollInterval =
     process.env['POLL_INTERVAL_MS'] ?? process.env['ORACLE_POLL_INTERVAL_MS'] ?? '5000';
@@ -108,6 +123,7 @@ export function loadAndValidateConfig(): OracleConfig {
     3,
     errors
   );
+  const queueMaxAttempts = readPositiveInt('QUEUE_MAX_ATTEMPTS', 5, errors);
   const retryPolicy: RetryPolicyOptions = {
     baseMs: readPositiveInt('ORACLE_RETRY_BASE_MS', 500, errors),
     maxMs: readPositiveInt('ORACLE_RETRY_MAX_MS', 30_000, errors),
@@ -152,5 +168,10 @@ export function loadAndValidateConfig(): OracleConfig {
     checkpointPath,
     dedupPath,
     rpcSimulateTimeoutMs,
+    oracleSecretKey: oracleSecretKey ?? '',
+    networkPassphrase,
+    nodeEnv,
+    queueMaxAttempts,
+    vaultToken: process.env['VAULT_TOKEN'] ?? '',
   };
 }

@@ -195,7 +195,6 @@ pub fn recurring_config(_env: &Env, base: RaffleConfig) -> RecurringRaffleConfig
         base_config: base,
         interval_seconds: 86_400,
         max_rounds: 3,
-        auto_fund: false,
     }
 }
 

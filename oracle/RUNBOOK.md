@@ -43,11 +43,11 @@ docker-compose ps
 # View logs
 docker-compose logs -f oracle
 
-# Check health endpoint
+# Check health endpoint (returns {"status":"ok"})
 curl http://localhost:9090/health
 
-# View metrics from inside the container (loopback-only by default)
-docker-compose exec oracle sh -lc 'curl -fsS -H "Authorization: Bearer $METRICS_AUTH_TOKEN" http://127.0.0.1:${METRICS_PORT:-9091}/metrics'
+# View metrics (Prometheus text format)
+curl http://localhost:9090/metrics
 ```
 
 ### 4. Local development
