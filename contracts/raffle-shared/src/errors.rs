@@ -79,11 +79,16 @@ pub enum ProtocolError {
     PrizeConfigurationLocked = 57,
     ExceedsMaxTicketsPerTx = 58,
     DrawingAlreadyInProgress = 59,
-    DrawingAlreadyComplete = 60,
-    InvalidEndTime = 61,
-    InvalidAdminAddress = 62,
-    InvalidDrawingTransition = 63,
+    DrawingAlreadyComplete = 61,
+    InvalidEndTime = 62,
+    InvalidAdminAddress = 63,
     RandomnessTooEarly = 64,
+    CancelTimelockActive = 65,
+    CancelNotScheduled = 66,
+    ExceedsMaxTicketsPerAddress = 67,
+    OracleNotRegistered = 68,
+    DuplicateOracleSubmission = 69,
+    CommitAlreadySubmitted = 70,
 
     // ------------------------------------------------------------------ --
     // Factory errors — mapped to 200+ to avoid conflicts with instance codes.
@@ -104,6 +109,13 @@ pub enum ProtocolError {
     FactoryRaffleNotEligible = 211,   // factory original: 17
     FactoryArithmeticOverflow = 212,  // factory original: 18
     FactoryTreasuryNotSet = 213,      // factory original: 19
+    FactoryRecurringNotFound = 214,   // factory original: 20
+    FactoryIntervalNotElapsed = 215,  // factory original: 21
+    FactoryMaxRoundsReached = 216,    // factory original: 22
+    FactoryRecurringInactive = 217,   // factory original: 23
+    FactoryCreationPaused = 218,      // factory original: 24
+    FactoryCallerNotRegisteredRaffle = 219, // factory original: 25
+    FactoryRandomnessSourceTooWeakForPrize = 220, // factory original: 26
 
     // ------------------------------------------------------------------ --
     // Reserved for future instance-specific errors (100–199).

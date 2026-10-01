@@ -1,0 +1,32 @@
+# Local Development Override
+#
+# Copy this file to docker-compose.override.yml for local development.
+# Docker Compose will automatically merge it with docker-compose.yml,
+# allowing you to override production settings without modifying the committed file.
+#
+# Usage:
+#   cp docker-compose.override.yml.example docker-compose.override.yml
+#   docker-compose up
+#
+# For more info: https://docs.docker.com/compose/compose-file/compose-file-v3/#compose-file-structure
+
+services:
+  oracle:
+    # Development mode: no resource limits, looser restarts
+    deploy:
+      resources:
+        limits:
+          cpus: "2"
+          memory: 2G
+        reservations:
+          cpus: "1"
+          memory: 1G
+    
+    # More verbose logging for development
+    environment:
+      LOG_LEVEL: debug
+    
+    # Faster restart for rapid iteration
+    restart_policy:
+      delay: 1s
+      max_attempts: 10

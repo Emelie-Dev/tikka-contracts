@@ -12,9 +12,34 @@ permissions:
   issues: write
 
 jobs:
+  cargo_deny:
+    name: cargo deny (Rust)
+    runs-on: ubuntu-latest
+    strategy:
+      matrix:
+        # Run against both workspaces: the main contracts workspace and the
+        # separate fuzz workspace (which has its own [workspace] and would
+        # otherwise be unscanned).
+        include:
+          - manifest: Cargo.toml
+            name: workspace
+          - manifest: fuzz/Cargo.toml
+            name: fuzz
+    steps:
+      - uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7.0.1
+
+      - name: cargo deny (${{ matrix.name }})
+        uses: EmbarkStudios/cargo-deny-action@3c6349835b2b7b196a839186cb8b78e02f7b5f25 # v2.1.1
+        with:
+          manifest-path: ${{ matrix.manifest }}
+          command: check
+          # advisories bans licenses sources
+          arguments: --all-features
+
   cargo_audit:
     name: cargo audit (Rust)
     runs-on: ubuntu-latest
+    timeout-minutes: 15
     steps:
       - uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7.0.1
 
@@ -90,6 +115,7 @@ jobs:
   npm_audit:
     name: npm audit (oracle production)
     runs-on: ubuntu-latest
+    timeout-minutes: 10
     defaults:
       run:
         working-directory: oracle

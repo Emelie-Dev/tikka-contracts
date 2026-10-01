@@ -6,7 +6,7 @@
 //! [`get_draw_attestation`] and receive everything needed to independently
 //! reproduce the winner selection in one response.
 
-use soroban_sdk::{contracttype, Address, BytesN, Env, String, Vec};
+use soroban_sdk::{contracttype, Address, BytesN, Env, Vec};
 
 use raffle_shared::{FairnessData, RandomnessSource};
 
@@ -77,7 +77,7 @@ pub struct DrawAttestation {
 /// // and compares results with attestation.winner_addresses
 /// ```
 ///
-/// See also: [`docs/RANDOMNESS.md`](../../../../docs/RANDOMNESS.md) — verification
+/// See also: [`docs/RANDOMNESS.md`](../../../docs/RANDOMNESS.md) — verification
 /// procedure.
 pub(crate) fn get_draw_attestation(env: &Env) -> Result<DrawAttestation, Error> {
     let raffle = read_raffle(env)?;
@@ -108,6 +108,7 @@ pub(crate) fn get_draw_attestation(env: &Env) -> Result<DrawAttestation, Error> 
         draw_timestamp: fairness_meta.draw_timestamp,
         draw_sequence: fairness_meta.draw_sequence,
         unique_winners: fairness_meta.unique_winners,
+        quorum_contributions: None,
     };
 
     // Resolve winning ticket IDs from indices

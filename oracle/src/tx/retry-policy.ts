@@ -20,6 +20,8 @@ export interface BackoffConfig {
   maxAttempts: number;
 }
 
+export type RetryPolicyOptions = Partial<BackoffConfig>;
+
 const DEFAULT_BACKOFF: BackoffConfig = {
   baseMs: 500,
   maxMs: 30_000,
@@ -29,7 +31,7 @@ const DEFAULT_BACKOFF: BackoffConfig = {
 export class RetryPolicy {
   private readonly config: BackoffConfig;
 
-  constructor(config: Partial<BackoffConfig> = {}) {
+  constructor(config: RetryPolicyOptions = {}) {
     this.config = { ...DEFAULT_BACKOFF, ...config };
   }
 

@@ -3,13 +3,7 @@ use soroban_sdk::testutils::{MockAuth, MockAuthInvoke};
 use soroban_sdk::IntoVal;
 
 // --------------------------------------------------------------------------
-// Pause precedence matrix (see contracts/raffle-factory/src/pause.rs)
-//
-// Flag            | Blocks create_raffle | Blocks ticket sales on existing instances
-// ----------------+---------------------+------------------------------------
-// global pause    | yes                 | yes  (emergency_pause_all -> is_global_paused)
-// Factory Paused  | yes                 | no
-// CreationPaused  | yes                 | no
+// Pause precedence tests (see docs/ARCHITECTURE.md for authoritative table)
 //
 // `emergency_pause_all` is the single call that halts the protocol.
 // ---------------------------------------------------------------------------
@@ -91,7 +85,7 @@ fn global_pause_is_independent_of_factory_pause() {
     let env = Env::default();
     let (client, _admin, _treasury) = setup_factory(&env);
 
-    client.emergency_pause_all();
+    client.emergency_pause_all(&String::from_str(&env, "test"));
     assert!(client.is_global_paused());
     // global pause does not set the factory-level flag.
     assert!(!client.is_factory_paused());
@@ -107,18 +101,22 @@ fn emergency_and_creation_entrypoints_reject_non_admin() {
     let stranger = Address::generate(&env);
 
     for entrypoint in ["emergency_pause_all", "emergency_unpause_all"] {
+        let args = match entrypoint {
+            "emergency_pause_all" => (String::from_str(&env, "test"),).into_val(&env),
+            _ => ().into_val(&env),
+        };
         env.mock_auths(&[MockAuth {
             address: &stranger,
             invoke: &MockAuthInvoke {
                 contract: &client.address,
                 fn_name: entrypoint,
-                args: ().into_val(&env),
+                args,
                 sub_invokes: &[],
             },
         }]);
 
         let result = match entrypoint {
-            "emergency_pause_all" => client.try_emergency_pause_all(),
+            "emergency_pause_all" => client.try_emergency_pause_all(&String::from_str(&env, "test")),
             "emergency_unpause_all" => client.try_emergency_unpause_all(),
             _ => unreachable!(),
         };

@@ -1,8 +1,5 @@
 import pino from 'pino';
 
-const isProduction = process.env.NODE_ENV === 'production';
-const logLevel = process.env.LOG_LEVEL ?? 'info';
-
 const redactedFields = new Set([
   'ORACLE_SECRET_KEY',
   'secretKey',
@@ -32,11 +29,20 @@ function redactLogMessage(message: string): string {
 export interface LoggerOptions {
   requestId?: string;
   raffleId?: string;
+  level?: string;
+  production?: boolean;
 }
 
 export type Logger = pino.Logger;
 
+let defaultLoggerOptions: Pick<LoggerOptions, 'level' | 'production'> = {
+  level: 'info',
+  production: false,
+};
+
 export function createLogger(options: LoggerOptions = {}): Logger {
+  const isProduction = options.production ?? defaultLoggerOptions.production;
+  const logLevel = options.level ?? defaultLoggerOptions.level;
   const baseLogger = pino(
     {
       level: logLevel,
@@ -47,7 +53,21 @@ export function createLogger(options: LoggerOptions = {}): Logger {
               return `${obj.level}:${obj.msg}`;
             },
           },
-      redact: ['secretKey', 'secret', 'password', 'token', 'apiKey', 'api_key', 'accessKey', 'access_key', 'privateKey', 'private_key', 'passphrase', 'req.headers.authorization', 'req.headers.cookie'],
+      redact: [
+        'secretKey',
+        'secret',
+        'password',
+        'token',
+        'apiKey',
+        'api_key',
+        'accessKey',
+        'access_key',
+        'privateKey',
+        'private_key',
+        'passphrase',
+        'req.headers.authorization',
+        'req.headers.cookie',
+      ],
     },
     isProduction
       ? undefined
@@ -69,7 +89,8 @@ export function createLogger(options: LoggerOptions = {}): Logger {
     childBindings.raffleId = options.raffleId;
   }
 
-  const logger = Object.keys(childBindings).length > 0 ? baseLogger.child(childBindings) : baseLogger;
+  const logger =
+    Object.keys(childBindings).length > 0 ? baseLogger.child(childBindings) : baseLogger;
 
   const originalInfo = logger.info.bind(logger);
   logger.info = (obj: unknown, ...args: unknown[]) => {
@@ -114,8 +135,13 @@ export function createLogger(options: LoggerOptions = {}): Logger {
   return logger;
 }
 
-export const logger = createLogger();
+export let logger = createLogger();
+
+export function configureLogger(options: Pick<LoggerOptions, 'level' | 'production'>): void {
+  defaultLoggerOptions = options;
+  logger = createLogger(options);
+}
 
 export function childLogger(options: LoggerOptions): Logger {
-  return createLogger(options);
+  return createLogger({ ...defaultLoggerOptions, ...options });
 }

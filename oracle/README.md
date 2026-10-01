@@ -28,6 +28,9 @@ The oracle requires a secure keypair to sign reveal transactions. The `KeyServic
 | `ALERT_QUEUE_DEPTH_LIMIT`    | No                | Queue depth that triggers a warning (default: `10`)     |
 | `ALERT_QUEUE_AGE_LIMIT_MS`   | No                | Max age of the oldest queued request (default: `300000`) |
 | `ALERT_RPC_UNREACHABLE_THRESHOLD` | No           | Consecutive RPC poll failures before alerting (default: `3`) |
+| `ORACLE_RETRY_BASE_MS`            | No           | Retry backoff base in milliseconds (default: `500`) |
+| `ORACLE_RETRY_MAX_MS`             | No           | Maximum retry backoff in milliseconds (default: `30000`) |
+| `ORACLE_RETRY_MAX_ATTEMPTS`       | No           | Maximum submission attempts (default: `5`) |
 
 ### Local Development (Environment Variables)
 

@@ -5,9 +5,9 @@
 //! [`raffle_shared::effective_limit`] and returns a [`PageResultRaffles`]
 //! with `total` and `has_more` fields.
 
-use soroban_sdk::{Address, Env, Symbol, IntoVal, Vec};
+use soroban_sdk::{contractimpl, Address, Env, Symbol, IntoVal, Vec};
 
-use crate::{ContractError, DataKey, ProtocolStats, RaffleFactory, StateCheckpoint};
+use crate::{ContractError, DataKey, ProtocolStats, RaffleFactory, RaffleFactoryClient, RaffleFactoryArgs, StateCheckpoint};
 use raffle_shared::{
     effective_limit, FairnessData, PageResultRaffles, PaginationParams,
 };

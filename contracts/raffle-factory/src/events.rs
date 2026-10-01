@@ -19,7 +19,6 @@ use soroban_sdk::{contractevent, Address, BytesN};
 #[allow(dead_code)]
 #[derive(Clone)]
 #[contractevent]
-#[soroban_sdk::contracttype]
 pub struct RaffleInstanceDeployed {
     /// Address of the deployed raffle instance.
     pub instance: Address,
@@ -34,7 +33,6 @@ pub struct RaffleInstanceDeployed {
 /// Emitted when the factory contract is initialized for the first time.
 #[derive(Clone)]
 #[contractevent]
-#[soroban_sdk::contracttype]
 pub struct FactoryInitialized {
     /// Admin of the factory.
     pub admin: Address,
@@ -50,7 +48,6 @@ pub struct FactoryInitialized {
 /// mechanism.
 #[derive(Clone)]
 #[contractevent]
-#[soroban_sdk::contracttype]
 pub struct AdminOpProposed {
     /// Sequential op ID (1-based) that identifies the proposed operation.
     pub op_id: u32,
@@ -66,7 +63,6 @@ pub struct AdminOpProposed {
 /// elapsed.
 #[derive(Clone)]
 #[contractevent]
-#[soroban_sdk::contracttype]
 pub struct AdminOpExecuted {
     /// Sequential op ID (1-based) of the executed operation.
     pub op_id: u32,
@@ -83,7 +79,6 @@ pub struct AdminOpExecuted {
 #[allow(dead_code)]
 #[derive(Clone)]
 #[contractevent]
-#[soroban_sdk::contracttype]
 pub struct TreasuryChanged {
     /// Treasury before the change.
     pub old_treasury: Address,
@@ -99,7 +94,6 @@ pub struct TreasuryChanged {
 /// Emitted when a proposed timelocked admin operation is cancelled.
 #[derive(Clone)]
 #[contractevent]
-#[soroban_sdk::contracttype]
 pub struct AdminOpCancelled {
     /// Sequential op ID (1-based) of the cancelled operation.
     pub op_id: u32,
@@ -167,7 +161,6 @@ pub struct AdminTransferProposed {
 /// Emitted when the proposed admin accepts the admin transfer.
 #[derive(Clone)]
 #[contractevent]
-#[soroban_sdk::contracttype]
 pub struct AdminTransferAccepted {
     /// Admin before the transfer.
     pub old_admin: Address,
@@ -182,7 +175,6 @@ pub struct AdminTransferAccepted {
 #[allow(dead_code)]
 #[derive(Clone)]
 #[contractevent]
-#[soroban_sdk::contracttype]
 pub struct AdminTransferFailed {
     /// Current admin at the time of the failed transfer.
     pub current_admin: Address,
@@ -198,7 +190,6 @@ pub struct AdminTransferFailed {
 /// raffles.
 #[derive(Clone)]
 #[contractevent]
-#[soroban_sdk::contracttype]
 pub struct CheckpointCreated {
     /// 1-based checkpoint sequence number (`raffle_count / CHECKPOINT_INTERVAL`).
     pub index: u32,
@@ -217,7 +208,6 @@ pub struct CheckpointCreated {
 #[allow(dead_code)]
 #[derive(Clone)]
 #[contractevent]
-#[soroban_sdk::contracttype]
 pub struct SupportedSacUpdated {
     /// Token whose SAC support flag changed.
     pub token: Address,
@@ -233,7 +223,6 @@ pub struct SupportedSacUpdated {
 /// factory.
 #[derive(Clone)]
 #[contractevent]
-#[soroban_sdk::contracttype]
 pub struct RaffleCleanedUp {
     /// Address of the raffle instance that was cleaned up.
     pub raffle_address: Address,
@@ -248,7 +237,6 @@ pub struct RaffleCleanedUp {
 /// Emitted when a creator is rate-limited from creating new raffles.
 #[derive(Clone)]
 #[contractevent]
-#[soroban_sdk::contracttype]
 pub struct CreationRateLimited {
     /// Creator that was rate-limited.
     pub creator: Address,
@@ -261,7 +249,6 @@ pub struct CreationRateLimited {
 /// Emitted when tokens are rescued out of the factory contract.
 #[derive(Clone)]
 #[contractevent]
-#[soroban_sdk::contracttype]
 pub struct FactoryTokensRescued {
     /// Address that rescued the tokens.
     pub rescued_by: Address,
@@ -278,7 +265,6 @@ pub struct FactoryTokensRescued {
 /// Emitted when the factory contract is upgraded to new wasm code.
 #[derive(Clone)]
 #[contractevent]
-#[soroban_sdk::contracttype]
 pub struct FactoryUpgraded {
     /// Admin that triggered the upgrade.
     pub admin: Address,
@@ -300,8 +286,6 @@ pub struct RecurringRaffleCreated {
     pub interval_seconds: u64,
     /// Maximum number of rounds; `0` means unlimited.
     pub max_rounds: u32,
-    /// Whether prize funding for each round happens automatically.
-    pub auto_fund: bool,
     /// Ledger timestamp of the next scheduled round.
     pub next_due: u64,
     /// Ledger timestamp of the schedule creation.
@@ -337,3 +321,37 @@ pub struct RecurringRaffleCancelled {
     /// Ledger timestamp of the cancellation.
     pub timestamp: u64,
 }
+
+#[derive(Clone)]
+#[contractevent]
+pub struct OracleApproved {
+    pub oracle: Address,
+    pub approved_by: Address,
+    pub timestamp: u64,
+}
+
+#[derive(Clone)]
+#[contractevent]
+pub struct OracleRemoved {
+    pub oracle: Address,
+    pub removed_by: Address,
+    pub timestamp: u64,
+}
+
+#[derive(Clone)]
+#[contractevent]
+pub struct ProfileNameSet {
+    pub creator: Address,
+    pub name: soroban_sdk::String,
+    pub timestamp: u64,
+}
+
+#[derive(Clone)]
+#[contractevent]
+pub struct VerifiedStatusSet {
+    pub creator: Address,
+    pub verified: bool,
+    pub set_by: Address,
+    pub timestamp: u64,
+}
+

@@ -14,6 +14,15 @@ permissions:
   contents: read
 
 jobs:
+  merge-artefacts:
+    name: Conflict markers and branch labels
+    runs-on: ubuntu-latest
+    timeout-minutes: 5
+    steps:
+      - uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7.0.1
+      - name: Check for conflict markers and bare branch labels
+        run: python3 scripts/check_merge_labels.py
+
   actionlint:
     name: actionlint
     runs-on: ubuntu-latest
@@ -29,4 +38,16 @@ jobs:
           ./actionlint -color .github/workflows/*.yml
       
       - name: Detect orphaned .rs files
-        run: python scripts/check_orphan_modules.py
+        run: python3 scripts/check_orphan_modules.py
+
+      - name: Install ruff
+        run: pip install --quiet ruff
+
+      - name: Ruff lint
+        run: make ruff-lint
+
+      - name: Ruff format check
+        run: make ruff-fmt-check
+
+      - name: Python script tests
+        run: make python-tests

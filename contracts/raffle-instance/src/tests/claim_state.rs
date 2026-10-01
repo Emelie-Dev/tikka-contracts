@@ -34,6 +34,7 @@ fn claim_state_fixture(
         prizes: soroban_sdk::vec![env, 5_000, 5_000],
         randomness_source: RandomnessSource::Internal,
         oracle_address: None,
+        oracle_public_key: None,
         protocol_fee_bp: 0,
         treasury_address: None,
         swap_router: None,

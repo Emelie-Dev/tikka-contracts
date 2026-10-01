@@ -117,6 +117,7 @@ pub struct TicketPurchased {
 }
 
 /// Emitted when tickets are bought for another address (a gift).
+#[allow(dead_code)]
 #[derive(Clone)]
 #[contractevent]
 pub struct TicketGifted {
@@ -213,17 +214,7 @@ pub struct OracleSeedDelivered {
     pub timestamp: u64,
 }
 
-#[derive(Clone)]
-#[contractevent]
-#[soroban_sdk::contracttype]
-pub struct OracleSeedDelivered {
-    pub oracle: Address,
-    pub seed: u64,
-    pub request_id: u64,
-    pub current_count: u32,
-    pub threshold: u32,
-    pub timestamp: u64,
-}
+
 
 /// Emitted when the raffle is finalized with all winners selected.
 ///
@@ -239,7 +230,6 @@ pub struct OracleSeedDelivered {
 /// this public-facing event always presents 1-indexed IDs.
 #[derive(Clone)]
 #[contractevent]
-#[soroban_sdk::contracttype]
 pub struct RaffleFinalized {
     /// Instance contract address of the finalized raffle.
     pub raffle_id: Address,
@@ -506,6 +496,7 @@ pub struct SwapDeadlineUpdated {
 }
 
 /// Emitted when the raffle end time is extended.
+#[allow(dead_code)]
 #[derive(Clone)]
 #[contractevent]
 pub struct EndTimeExtended {
@@ -554,6 +545,7 @@ pub struct AdminChanged {
 
 /// Emitted once per NFT receipt is successfully minted
 /// by the configured `nft_contract`.
+#[allow(dead_code)]
 #[derive(Clone)]
 #[contractevent]
 pub struct TicketNftMinted {

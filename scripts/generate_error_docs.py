@@ -1,11 +1,10 @@
 #!/usr/bin/env python3
-"""
-Deterministically generate `docs/ERRORS.md` from the source of truth.
+"""Deterministically generate ``docs/ERRORS.md`` from the source of truth.
 
 Parses the contract error enums:
 
-    contracts/raffle-instance/src/lib.rs  -> `Error`
-    contracts/raffle-factory/src/lib.rs   -> `ContractError`
+    contracts/raffle-instance/src/lib.rs  -> ``Error``
+    contracts/raffle-factory/src/lib.rs   -> ``ContractError``
 
 The output is deterministic: for a fixed repository state the generated file
 is byte-identical every run, so it can be diffed in CI.
@@ -13,19 +12,20 @@ is byte-identical every run, so it can be diffed in CI.
 Usage:
     python scripts/generate_error_docs.py
 """
+"""Deterministically generate ``docs/ERRORS.md`` from ProtocolError."""
 
 from __future__ import annotations
 
 import re
 import sys
-from dataclasses import dataclass
 from pathlib import Path
 
 REPO_ROOT = Path(__file__).resolve().parent.parent
 DOCS = REPO_ROOT / "docs"
+CATALOG = REPO_ROOT / "contracts" / "raffle-shared" / "src" / "errors.rs"
 
 # (source file, enum identifier, section title)
-ENUMS = [
+ENUMS: list[tuple[str, str, str]] = [
     (
         "contracts/raffle-instance/src/lib.rs",
         "Error",
@@ -39,26 +39,53 @@ ENUMS = [
 ]
 
 
-def parse_error_enum(file_path, enum_name):
-    """Parse `pub enum <enum_name> { Name = code, ... }` -> [(code, name)]."""
-    with open(file_path, "r", encoding="utf-8") as f:
-        content = f.read()
+def parse_error_enum(file_path: Path, enum_name: str) -> list[tuple[int, str]]:
+    """Parse ``pub enum <enum_name> { Name = code, ... }`` → [(code, name)]."""
+    content = file_path.read_text(encoding="utf-8")
     match = re.search(
         r"pub enum " + re.escape(enum_name) + r" \{(.*?)\}",
         content,
         re.DOTALL,
     )
     if not match:
-        print(f"Error: Could not find enum {enum_name} in {file_path}")
+        print(f"Error: Could not find enum {enum_name} in {file_path}", file=sys.stderr)
         sys.exit(1)
-    errors = []
-    for m in re.finditer(r"(\w+)\s*=\s*(\d+)", match.group(1)):
-        errors.append((int(m.group(2)), m.group(1)))
+    errors = [
+        (int(m.group(2)), m.group(1))
+        for m in re.finditer(r"(\w+)\s*=\s*(\d+)", match.group(1))
+    ]
     errors.sort(key=lambda x: x[0])
+def parse_protocol_errors():
+    """Parse catalog entries as (catalog code, name, contract ABI code)."""
+    content = CATALOG.read_text(encoding="utf-8")
+    match = re.search(r"pub enum ProtocolError\s*\{(.*?)\}", content, re.DOTALL)
+    if not match:
+        print(f"Error: Could not find ProtocolError in {CATALOG}", file=sys.stderr)
+        sys.exit(1)
+
+    errors = []
+    pattern = re.compile(
+        r"^[ \t]*(\w+)[ \t]*=[ \t]*(\d+),"
+        r"[ \t]*(?://[ \t]*factory original:[ \t]*(\d+))?[ \t]*$",
+        re.MULTILINE,
+    )
+    for entry in pattern.finditer(match.group(1)):
+        catalog_code = int(entry.group(2))
+        name = entry.group(1)
+        factory_abi_code = entry.group(3)
+        if name.startswith("Factory"):
+            if factory_abi_code is None:
+                print(f"Error: Missing factory ABI code for {name}", file=sys.stderr)
+                sys.exit(1)
+            errors.append((catalog_code, name[len("Factory"):], int(factory_abi_code)))
+        elif catalog_code < 100:
+            errors.append((catalog_code, name, catalog_code))
+
+    errors.sort(key=lambda error: error[0])
     return errors
 
 
-INSTANCE_DESCRIPTIONS = {
+INSTANCE_DESCRIPTIONS: dict[str, str] = {
     "RaffleNotFound": "The raffle data was not found in storage",
     "RaffleInactive": "The raffle is not in an active state",
     "TicketsSoldOut": "All tickets have been sold",
@@ -113,9 +140,10 @@ INSTANCE_DESCRIPTIONS = {
     "CancelNotScheduled": "No cancellation is scheduled",
     "OracleNotRegistered": "Caller is not a registered oracle for this raffle",
     "DuplicateOracleSubmission": "This oracle has already submitted its seed",
+    "CommitAlreadySubmitted": "A commit has already been submitted for this draw",
 }
 
-INSTANCE_MESSAGES = {
+INSTANCE_MESSAGES: dict[str, str] = {
     "RaffleNotFound": "Raffle not found",
     "RaffleInactive": "This raffle is not currently active",
     "TicketsSoldOut": "Sorry, all tickets have been sold!",
@@ -170,9 +198,10 @@ INSTANCE_MESSAGES = {
     "CancelNotScheduled": "No cancellation is scheduled",
     "OracleNotRegistered": "Caller is not a registered oracle for this raffle",
     "DuplicateOracleSubmission": "This oracle has already submitted its seed",
+    "CommitAlreadySubmitted": "This oracle has already committed for this draw",
 }
 
-FACTORY_DESCRIPTIONS = {
+FACTORY_DESCRIPTIONS: dict[str, str] = {
     "AlreadyInitialized": "Factory is already initialized",
     "NotAuthorized": "User is not the admin",
     "ContractPaused": "Factory is paused",
@@ -192,9 +221,11 @@ FACTORY_DESCRIPTIONS = {
     "MaxRoundsReached": "Maximum rounds reached",
     "RecurringInactive": "Recurring raffle is inactive",
     "CreationPaused": "Raffle creation is paused",
+    "CallerNotRegisteredRaffle": "Caller is not a raffle registered by this factory",
+    "RandomnessSourceTooWeakForPrize": "Randomness source is too weak for the configured prize",
 }
 
-FACTORY_MESSAGES = {
+FACTORY_MESSAGES: dict[str, str] = {
     "AlreadyInitialized": "Factory already initialized",
     "NotAuthorized": "You are not the admin",
     "ContractPaused": "Factory is temporarily paused",
@@ -214,37 +245,44 @@ FACTORY_MESSAGES = {
     "MaxRoundsReached": "Maximum rounds reached",
     "RecurringInactive": "Recurring raffle is inactive",
     "CreationPaused": "Raffle creation is paused",
+    "CallerNotRegisteredRaffle": "Caller is not a registered raffle",
+    "RandomnessSourceTooWeakForPrize": "Randomness source is too weak for this prize",
 }
 
 
-def markdown_table(errors, descriptions, messages):
+def markdown_table(
+    errors: list[tuple[int, str]],
+    descriptions: dict[str, str],
+    messages: dict[str, str],
+) -> str:
     lines = [
         "| Code | Error | Description | Frontend Message |",
         "| ---- | ----- | ----------- | ---------------- |",
     ]
-    for code, name in errors:
+    for _, abi_code, name in errors:
         desc = descriptions.get(name, "TODO: Add description")
         msg = messages.get(name, "TODO: Add message")
-        lines.append(f"| {code} | `{name}` | {desc} | \"{msg}\" |")
+        lines.append(f'| {code} | `{name}` | {desc} | "{msg}" |')
+        lines.append(f"| {abi_code} | `{name}` | {desc} | \"{msg}\" |")
     return "\n".join(lines)
 
 
-def typescript_mapping(instance_errors):
+def typescript_mapping(instance_errors: list[tuple[int, str]]) -> str:
     lines = [
         "## Error Code Mapping (TypeScript)",
         "",
         "```typescript",
         "const errorMessages: Record<number, string> = {",
     ]
-    for code, name in instance_errors:
+    for _, code, name in instance_errors:
         msg = INSTANCE_MESSAGES.get(name, "TODO: Add message")
-        lines.append(f"  {code}: \"{msg}\",")
+        lines.append(f'  {code}: "{msg}",')
     lines.append("};")
     lines.append("```")
     return "\n".join(lines)
 
 
-def main():
+def main() -> None:
     sections = []
     for src_rel, enum_name, title in ENUMS:
         src_file = REPO_ROOT / src_rel
@@ -258,13 +296,24 @@ def main():
             table = markdown_table(errors, FACTORY_DESCRIPTIONS, FACTORY_MESSAGES)
         sections.append(f"## {title}\n\n{table}")
 
-    instance_errors = parse_error_enum(
-        REPO_ROOT / ENUMS[0][0], ENUMS[0][1]
-    )
+    instance_errors = parse_error_enum(REPO_ROOT / ENUMS[0][0], ENUMS[0][1])
 
-    header = f"""# Error Codes
+    header = """\
+# Error Codes
+def main():
+    protocol_errors = parse_protocol_errors()
+    instance_errors = [error for error in protocol_errors if error[0] < 100]
+    factory_errors = [error for error in protocol_errors if 200 <= error[0] <= 299]
+    sections = [
+        "## Instance Contract Errors\n\n"
+        + markdown_table(instance_errors, INSTANCE_DESCRIPTIONS, INSTANCE_MESSAGES),
+        "## Factory Contract Errors\n\n"
+        + markdown_table(factory_errors, FACTORY_DESCRIPTIONS, FACTORY_MESSAGES),
+    ]
 
-This document is **auto-generated** from the contract error enums. **Do not
+    header = """# Error Codes
+
+This document is **auto-generated** from `ProtocolError`. **Do not
 edit by hand.** Regenerate whenever error codes or descriptions change:
 
 ```bash
@@ -272,10 +321,10 @@ python scripts/generate_error_docs.py
 ```
 
 Sources of truth:
-- Instance errors: `Error` in
-  [`contracts/raffle-instance/src/lib.rs`](contracts/raffle-instance/src/lib.rs).
-- Factory errors: `ContractError` in
-  [`contracts/raffle-factory/src/lib.rs`](contracts/raffle-factory/src/lib.rs).
+- Canonical catalog: `ProtocolError` in
+    [`contracts/raffle-shared/src/errors.rs`](contracts/raffle-shared/src/errors.rs).
+- Factory ABI codes remain unchanged; the catalog records them next to each
+    namespaced factory code.
 
 ---
 

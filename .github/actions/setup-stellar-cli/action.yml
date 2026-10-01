@@ -1,0 +1,25 @@
+name: Set up Stellar CLI
+description: >
+  Installs the Stellar CLI at the version declared in scripts/common.sh
+  (STELLAR_CLI_VERSION — the single source of truth per issues #841/#843).
+  No version input: callers cannot accidentally pin a different version here.
+
+runs:
+  using: composite
+  steps:
+    - name: Install Stellar CLI (version from scripts/common.sh)
+      shell: bash
+      run: |
+        # Read the pinned version from the single source of truth.
+        version="$(grep -m1 '^STELLAR_CLI_VERSION=' scripts/common.sh \
+                    | cut -d'"' -f2)"
+        if [[ -z "${version}" ]]; then
+          echo "ERROR: STELLAR_CLI_VERSION not found in scripts/common.sh" >&2
+          exit 1
+        fi
+        echo "Installing Stellar CLI ${version}..."
+        curl -sSL --retry 3 --retry-delay 5 \
+          "https://github.com/stellar/stellar-cli/releases/download/v${version}/stellar-cli-${version}-x86_64-unknown-linux-gnu.tar.gz" \
+          | tar -xz
+        sudo mv stellar /usr/local/bin/stellar
+        stellar --version

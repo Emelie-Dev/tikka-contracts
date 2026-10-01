@@ -71,7 +71,7 @@ def main() -> int:
     args = parser.parse_args()
 
     baseline_path = Path(args.baseline)
-    baseline = json.loads(baseline_path.read_text(encoding="utf-8"))
+    baseline: dict = json.loads(baseline_path.read_text(encoding="utf-8"))
     tolerance = int(baseline.get("tolerance_bytes", 2048))
     wasm_dir = Path(args.wasm_dir) if args.wasm_dir else wasm_dir_from_common_sh()
     report_path = os.environ.get("WASM_SIZE_REPORT", "")
@@ -123,7 +123,8 @@ def main() -> int:
         for name, size in sizes.items():
             baseline["contracts"][name]["baseline_bytes"] = size
         baseline_path.write_text(
-            json.dumps(baseline, indent=2, sort_keys=True) + "\n", encoding="utf-8"
+            json.dumps(baseline, indent=2, sort_keys=True) + "\n",
+            encoding="utf-8",
         )
         print(f"Updated baseline: {baseline_path}")
 

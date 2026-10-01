@@ -1,83 +1,54 @@
-# Tikka Protocol Fee Model
+# Fee Model
 
-The fee model is additive: the buyer pays the fee on top of the ticket price.
+## Rounding direction
 
-Protocol fees are charged at two points: ticket purchase and prize claim. Each
-site uses a single rounding rule, always in the protocol's favour.
+**All basis-point calculations in this protocol truncate (floor division).**
 
-## Rounding Rules
+This means the protocol collects *at most* the stated percentage — never more.
+Truncation always favours the payer (ticket buyer or prize winner), which is
+the correct default for a fair raffle protocol.
 
-| Site | Formula | Rounding |
-|------|---------|----------|
-| Ticket purchase | `total_price × protocol_fee_bp / 10_000` | Floor |
-| Prize claim | `(tier_amount × protocol_fee_bp + 9_999) / 10_000` | Ceiling |
+## Implementation
 
-Fees are transferred to the treasury address at collection time. The
-`AccumulatedFees` ledger tracks the same amounts for admin `withdraw_fees`
-accounting — the total protocol take must equal the documented rate, not more.
+Every fee and prize calculation goes through one of two functions in
+`contracts/raffle-shared/src/math.rs`:
 
-## Tier Prize Allocation
+| Function | Formula | Returns |
+|---|---|---|
+| `apply_bp(amount, bp)` | `floor(amount × bp / 10_000)` | the fee/share |
+| `split_bp(amount, bp)` | `(floor(amount × bp / 10_000), amount − fee)` | `(fee, remainder)` |
 
-- **Formula:** `prize_amount × tier_basis_points / 10_000` for every tier except the final tier.
-- **Final tier:** Receives `prize_amount` minus the amounts allocated to all earlier tiers.
-- **Rounding rule:** Integer-division dust is assigned to the final tier, so all tier prizes sum exactly to `prize_amount` and no prize funds remain undistributed.
+Use `split_bp` whenever you need both sides of a split (e.g. fee and net
+payout) so that `fee + remainder == amount` exactly — no rounding gap.
 
-## Worked Example (mirrored by `fee_model_worked_example_matches_lifecycle`)
+The denominator `10_000` is the constant `BP_DENOMINATOR` exported from the
+same module.
 
-Parameters:
+## Where fees are charged
 
-- `protocol_fee_bp = 250` (2.5 %)
-- `ticket_price = 100_000_000` stroops (100 XLM)
-- `max_tickets = 10` (all sold)
-- `prize_amount = 800_000_000` stroops (800 XLM, single tier)
+| Event | Formula | Rounding |
+|---|---|---|
+| Ticket purchase | `floor(net_price × protocol_fee_bp / 10_000)` | truncate |
+| Early-bird discount | `floor(gross × early_bird_discount_bp / 10_000)` | truncate |
+| Prize claim | `floor(prize_amount × protocol_fee_bp / 10_000)` | truncate |
+| Prize tier split | `floor(prize_amount × tier_bp / 10_000)` | truncate |
 
-### Ticket purchase fees (floor)
+## Numeric safety
 
-Per ticket: `100_000_000 × 250 / 10_000 = 2_500_000` stroops (2.5 XLM)
+- All intermediate products use `checked_mul` to catch `i128` overflow before
+  it occurs.
+- `MAX_PRIZE_AMOUNT` (1e21) and `MAX_PROTOCOL_FEE_BP` (2 000) are chosen so
+  that `MAX_PRIZE_AMOUNT × MAX_PROTOCOL_FEE_BP` fits in `i128`
+  (`2 × 10^24 < 1.7 × 10^38`).
 
-Total ticket fees: `10 × 2_500_000 = 25_000_000` stroops (25 XLM)
+## Property guarantee
 
-### Prize claim fee (ceiling)
+For all `amount: i128` and all `bp` in `0..=10_000`:
 
-Single tier gross: `800_000_000` stroops
+```
+let (fee, remainder) = split_bp(amount, bp).unwrap();
+assert_eq!(fee + remainder, amount);
+```
 
-Claim fee: `(800_000_000 × 250 + 9_999) / 10_000 = 20_000_000` stroops (20 XLM)
-
-Winner receives: `800_000_000 − 20_000_000 = 780_000_000` stroops (780 XLM)
-
-### Total protocol revenue
-
-| Source | Amount (stroops) | Amount (XLM) |
-|--------|------------------|--------------|
-| Ticket fees | 25_000_000 | 25 |
-| Claim fee | 20_000_000 | 20 |
-| **Total** | **45_000_000** | **45** |
-
-The end-to-end invariant test in
-`contracts/raffle-instance/src/tests/invariants.rs` walks this lifecycle and
-asserts the treasury balance increases by exactly 45 XLM — no double-count via
-`withdraw_fees`, and no rounding drift.
-
-## Fee Collection Points
-
-### 1. At Ticket Purchase
-
-- **Formula:** `total_price × protocol_fee_bp / 10_000` (floor division)
-- **Recipient:** Treasury address
-- **Payer:** Ticket buyer
-
-### 2. At Prize Claim
-
-- **Formula:** `(prize_tier_amount × protocol_fee_bp + 9_999) / 10_000` (ceiling division)
-- **Recipient:** Treasury address
-- **Payer:** Prize winner (deducted from payout)
-
-## Zero Fee Rate
-
-When `protocol_fee_bp = 0`, no fees are collected at either site and the
-treasury balance must not change across the full lifecycle.
-
-## Maximum Fee Rate
-
-`MAX_PROTOCOL_FEE_BP = 2_000` (20 %). The invariant test repeats the full
-lifecycle at `protocol_fee_bp ∈ {0, 1, 100, 2_000}`.
+This is verified by the exhaustive test
+`split_bp_sum_property_all_bp_values` in `contracts/raffle-shared/src/math.rs`.
