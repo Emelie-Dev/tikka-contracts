@@ -37,9 +37,9 @@ export class RequestQueue {
   constructor(options: RequestQueueOptions = {}) {
     this.alerter = options.alerter;
     this.deadLetterStore = options.deadLetterStore ?? new DeadLetterStore(':memory:');
-    this.depthLimit = options.depthLimit ?? Number(process.env.ALERT_QUEUE_DEPTH_LIMIT ?? 10);
-    this.ageLimitMs = options.ageLimitMs ?? Number(process.env.ALERT_QUEUE_AGE_LIMIT_MS ?? 300_000);
-    this.maxAttempts = options.maxAttempts ?? Number(process.env.QUEUE_MAX_ATTEMPTS ?? 5);
+    this.depthLimit = options.depthLimit ?? 10;
+    this.ageLimitMs = options.ageLimitMs ?? 300_000;
+    this.maxAttempts = options.maxAttempts ?? 5;
   }
 
   enqueue(job: RandomnessJob): void {
@@ -95,11 +95,11 @@ export class RequestQueue {
     raffleContract: string,
     requestId: bigint,
     error: string,
-    now: number = Date.now(),
+    now: number = Date.now()
   ): 'retry' | 'dead_lettered' {
     const index = this.jobs.findIndex(
       (tracked) =>
-        tracked.job.raffleContract === raffleContract && tracked.job.requestId === requestId,
+        tracked.job.raffleContract === raffleContract && tracked.job.requestId === requestId
     );
     if (index === -1) {
       return 'dead_lettered';
@@ -141,7 +141,7 @@ export class RequestQueue {
         tracked,
         `Queue depth (${this.size() + 1}) exceeded limit (${this.depthLimit})`,
         'queue_depth',
-        now,
+        now
       );
       evacuated += 1;
     }
@@ -156,7 +156,7 @@ export class RequestQueue {
         tracked,
         `Request age (${now - tracked.firstEnqueuedAtMs}ms) exceeded limit (${this.ageLimitMs}ms)`,
         'queue_age',
-        now,
+        now
       );
       evacuated += 1;
     }
@@ -196,7 +196,7 @@ export class RequestQueue {
     tracked: TrackedJob,
     error: string,
     reason: DeadLetterReason,
-    now: number,
+    now: number
   ): void {
     const entry: DeadLetterEntry = {
       job: tracked.job,
@@ -229,7 +229,7 @@ export class RequestQueue {
 
     console.error(
       `Dead-lettered randomness request: raffle=${tracked.job.raffleContract} ` +
-        `requestId=${tracked.job.requestId} reason=${reason} error=${error}`,
+        `requestId=${tracked.job.requestId} reason=${reason} error=${error}`
     );
   }
 }

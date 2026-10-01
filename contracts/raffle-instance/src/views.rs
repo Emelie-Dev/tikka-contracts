@@ -57,7 +57,7 @@ pub(crate) fn get_raffle(env: Env) -> Result<crate::Raffle, Error> {
 ///   `FairnessMetadata` written to storage).
 /// - [`Error::NotInitialized`] — the contract has not been initialised.
 ///
-/// See also: [`docs/RANDOMNESS.md`](../../../../docs/RANDOMNESS.md) — audit
+/// See also: [`docs/RANDOMNESS.md`](../../../docs/RANDOMNESS.md) — audit
 /// and replay verification.
 pub(crate) fn get_fairness_data(env: Env) -> Result<FairnessData, Error> {
     let meta: FairnessMetadata = env.storage().persistent().get(&DataKey::RandomnessSeed).ok_or(Error::InvalidStatus)?;

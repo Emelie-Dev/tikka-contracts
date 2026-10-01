@@ -58,6 +58,23 @@ stateDiagram-v2
 - `Claimed`: terminal state when all claims are complete.
 - `Cancelled` / `Failed`: terminal non-success states.
 
+### Who can finalize
+
+`finalize_raffle` is **permissionless**: any address may call it, but only once the raffle is
+contractually over. The gate is `time_ended || tickets_full`, evaluated on chain:
+
+- `time_ended` — `ledger_timestamp >= end_time` (skipped when `no_deadline` is `true`).
+- `tickets_full` — `tickets_sold >= max_tickets`.
+
+Before either holds, the call reverts with `InvalidStateTransition`, so no raffle can be finalized
+early. A second call after the draw has progressed reverts with `InvalidStatus`, so finalization
+cannot be repeated.
+
+`finalize_raffle` does **not** require creator authorization. Its preconditions are fully
+verifiable on chain, so restricting it to the creator let a creator stall a raffle that was already
+over: buyers' funds stayed escrowed, and `refund_ticket` was unavailable because it requires
+`Cancelled` or `Failed`. Admin cancellation was the only remaining exit. See [#1000].
+
 ### Token egress and escrow solvency
 
 The instance has four intended token-moving paths:
@@ -189,4 +206,81 @@ Find that Guard is already held → Error::Reentrancy
 Or find that state is already final → no unpaid tickets can be minted
 
 This closes the attack vector described in Issue #763.
+
+## Pause-Flag Precedence and Emergency Controls
+
+The protocol exposes five pause surfaces. They compose as a logical OR:
+an operation is blocked if **any** flag whose scope covers it is set.
+There is no override or hierarchy — clearing one flag never clears
+another, so each must be lifted independently.
+
+| Flag | Set / clear entrypoints | Scope: blocks |
+|---|---|---|
+| `DataKey::Paused` (factory) | `pause_factory` / `unpause_factory` (query: `is_factory_paused`) | `create_raffle` and every mutating factory op |
+| global pause | `emergency_pause_all` / `emergency_unpause_all` (query: `is_global_paused`) | `create_raffle` **and** ticket purchases on every already-deployed instance (via instance-side `require_global_not_paused`) |
+| `DataKey::CreationPaused` | `set_creation_paused` (query: `is_creation_paused`) | `create_raffle` only — all other ops, reads, and in-flight raffles unaffected |
+| `DataKey::Paused` (instance) | `pause` / `unpause` | that single instance's mutating ops |
+| `Raffle::ticket_sales_paused` | `pause_ticket_sales` / `resume_ticket_sales` | ticket purchases on that single instance |
+
+### Composition Rules
+
+- `emergency_pause_all` blocks `create_raffle` even when `Paused` is
+  `false`, because both flags are checked independently.
+- `unpause_factory` clears **only** `DataKey::Paused`; it does **not**
+  clear the global pause. Use `emergency_unpause_all` for that.
+- `require_global_not_paused` in the instance consults the **global**
+  flag (`is_global_paused`), so `pause_factory` does **not** stop ticket
+  sales on existing raffles — `emergency_pause_all` does.
+
+### Incident Response
+
+To stop everything with a single call, use **`emergency_pause_all`**. It
+is the only switch that halts both new-raffle creation and ticket
+purchases on all already-deployed instances. See
+[`oracle/RUNBOOK.md`](../oracle/RUNBOOK.md).
+## Recurring Raffles
+
+Recurring raffles allow creators to deploy an automated, periodic series of raffles (e.g. weekly or monthly) using a single template configuration without manual redeployment.
+
+### State Machine
+
+```mermaid
+stateDiagram-v2
+    [*] --> Active: create_recurring_raffle
+    Active --> Active: trigger_next_round [now >= next_due && (max_rounds == 0 || round < max_rounds)]
+    Active --> Cancelled: cancel_recurring_raffle [creator or admin]
+    Cancelled --> [*]
+```
+
+### Recurring Schedule States
+
+- **`Active` (`active = true`)**: The recurring schedule is running. When the ledger timestamp reaches `next_due`, `trigger_next_round` can be invoked to deploy the instance for the next round.
+- **`Cancelled` (`active = false`)**: Terminal state for the recurring schedule. No further rounds can be triggered. Raffles already deployed in previous rounds continue their normal lifecycle unaffected.
+
+### Round Lifecycle & Authorisation Model
+
+1. **Schedule Creation (`create_recurring_raffle`)**:
+   - **Auth**: Requires creator authorization (`creator.require_auth()`).
+   - **Interval Validation**: Strictly enforces `MIN_RECURRING_INTERVAL_SECONDS` (3,600s / 1 hour) <= `interval_seconds` <= `MAX_RECURRING_INTERVAL_SECONDS` (31,536,000s / 365 days).
+   - Sets `current_round = 0`, `active = true`, `next_due = now + interval_seconds`.
+   - Emits `RecurringRaffleCreated`.
+
+2. **Round Triggering (`trigger_next_round`)**:
+   - **Auth**: **Permissionless.** Any account (cron bots, keepers, users, or the creator) may call `trigger_next_round` once `now >= next_due`. This prevents recurring schedules from stalling if the creator is inactive.
+   - Deploys a new raffle instance using `base_config`.
+   - Advances `current_round += 1`, updates `next_due = now + interval_seconds`, and records the new raffle address.
+   - Emits `RecurringRoundTriggered`.
+
+3. **Max Rounds Semantics**:
+   - `max_rounds = 0`: Unlimited (infinite) recurring raffle.
+   - `max_rounds > 0`: Capped series. Attempting to trigger beyond `max_rounds` fails with `MaxRoundsReached`.
+
+4. **Prize Funding Responsibility**:
+   - Prize funding is **not automatic**. Newly deployed round instances start in the `PendingPrize` status.
+   - The creator (or authorized funder) must call `deposit_prize` on the newly deployed raffle instance contract to transition it to `Active` and begin ticket sales.
+
+5. **Cancellation (`cancel_recurring_raffle`)**:
+   - **Auth**: Restricted to either the schedule `creator` or the factory `admin`.
+   - Sets `active = false` and emits `RecurringRaffleCancelled`.
+
 

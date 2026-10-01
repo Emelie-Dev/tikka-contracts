@@ -3,13 +3,7 @@ use soroban_sdk::testutils::{MockAuth, MockAuthInvoke};
 use soroban_sdk::IntoVal;
 
 // --------------------------------------------------------------------------
-// Pause precedence matrix (see contracts/raffle-factory/src/pause.rs)
-//
-// Flag            | Blocks create_raffle | Blocks ticket sales on existing instances
-// ----------------+---------------------+------------------------------------
-// global pause    | yes                 | yes  (emergency_pause_all -> is_global_paused)
-// Factory Paused  | yes                 | no
-// CreationPaused  | yes                 | no
+// Pause precedence tests (see docs/ARCHITECTURE.md for authoritative table)
 //
 // `emergency_pause_all` is the single call that halts the protocol.
 // ---------------------------------------------------------------------------

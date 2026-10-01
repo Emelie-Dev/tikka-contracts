@@ -552,6 +552,14 @@ if config.randomness_source == RandomnessSource::External {
         result
     }
 
+    /// Advance a raffle out of `Active` once it is contractually over.
+    ///
+    /// Permissionless: any address may call this, but only after
+    /// `time_ended || tickets_full` holds. Before that it reverts with
+    /// `InvalidStateTransition`, so a raffle can never be finalized early.
+    /// Finalizing is idempotent with respect to the draw itself — the first
+    /// successful call takes `DrawingLock` and later calls revert with
+    /// `InvalidStatus`. #1000
     pub fn finalize_raffle(env: Env) -> Result<(), Error> {
         let result = draw::finalize_raffle(env.clone());
         #[cfg(any(test, feature = "testutils"))]
@@ -678,7 +686,7 @@ if config.randomness_source == RandomnessSource::External {
                 }
             }
 
-            let aggregate = randomness::aggregate_quorum_seeds(&env, &seeds);
+            let aggregate = randomness::aggregate_quorum_seeds(&env, request_id, &seeds);
             helpers::do_finalize_with_seed(&env, raffle, aggregate, RandomnessType::Quorum, Some(seeds))?;
         }
 
@@ -804,7 +812,7 @@ if config.randomness_source == RandomnessSource::External {
     /// Only available in `Finalized` or `Claimed` states; returns `InvalidStatus`
     /// otherwise.
     ///
-    /// See [`docs/RANDOMNESS.md`] for the verification procedure.
+    /// See [`docs/RANDOMNESS.md`](../../../docs/RANDOMNESS.md) for the verification procedure.
     pub fn get_draw_attestation(
         env: Env,
     ) -> Result<attestation::DrawAttestation, Error> {

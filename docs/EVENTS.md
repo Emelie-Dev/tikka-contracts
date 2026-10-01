@@ -342,15 +342,14 @@ Emitted when a recurring raffle schedule is created.
 
 Topic: `tikka:recurring_raffle_created`
 
-| Field              | Type      | Flags | Description                                                 |
-| ------------------ | --------- | ----- | ----------------------------------------------------------- |
-| `recurring_id`     | `u32`     |       | Unique ID (1-based) of the recurring raffle schedule.       |
-| `creator`          | `Address` |       | Creator that owns the recurring schedule.                   |
-| `interval_seconds` | `u64`     |       | Seconds between consecutive rounds.                         |
-| `max_rounds`       | `u32`     |       | Maximum number of rounds; `0` means unlimited.              |
-| `auto_fund`        | `bool`    |       | Whether prize funding for each round happens automatically. |
-| `next_due`         | `u64`     |       | Ledger timestamp of the next scheduled round.               |
-| `timestamp`        | `u64`     |       | Ledger timestamp of the schedule creation.                  |
+| Field | Type | Flags | Description |
+|-------|------|-------|-------------|
+| `recurring_id` | `u32` |  | Unique ID (1-based) of the recurring raffle schedule. |
+| `creator` | `Address` |  | Creator that owns the recurring schedule. |
+| `interval_seconds` | `u64` |  | Seconds between consecutive rounds. |
+| `max_rounds` | `u32` |  | Maximum number of rounds; `0` means unlimited. |
+| `next_due` | `u64` |  | Ledger timestamp of the next scheduled round. |
+| `timestamp` | `u64` |  | Ledger timestamp of the schedule creation. |
 
 **Emitted by:** `create_recurring_raffle`
 
