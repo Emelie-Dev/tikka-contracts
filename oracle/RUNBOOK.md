@@ -26,9 +26,11 @@ docker-compose up -d
 ```
 
 Docker Compose will:
+
 - Build the oracle service from `oracle/Dockerfile`
 - Mount a persistent volume at `/usr/src/app/data` for checkpoint and dedup state
-- Expose the health and metrics endpoints on port 9090
+- Publish `/health` on host loopback at port 9090 for local probes
+- Keep `/metrics` on a separate, un-published container port (9091 by default)
 - Apply resource limits (512 MB memory, 1 CPU) to prevent runaway consumption
 - Rotate logs to prevent unbounded growth
 
@@ -92,28 +94,35 @@ To change the location, set `DATA_DIR` in your `.env` file to the desired absolu
 
 ## Health and Metrics Endpoints
 
-| Endpoint | Purpose |
-|----------|---------|
-| `GET /health` | Liveness probe — returns `{"status":"ok"}` |
-| `GET /metrics` | Prometheus text exposition format |
+| Endpoint       | Purpose                                                                                                             |
+| -------------- | ------------------------------------------------------------------------------------------------------------------- |
+| `GET /health`  | Liveness probe — returns `{"status":"ok"}`                                                                          |
+| `GET /metrics` | Prometheus text exposition format; requires `Authorization: Bearer <token>` when `METRICS_AUTH_TOKEN` is configured |
 
-Default port: `9090` (override with `HEALTH_PORT`).
+Health defaults to port `9090` (`HEALTH_PORT`). Metrics default to port `9091`
+(`METRICS_PORT`) and bind to `127.0.0.1` (`METRICS_BIND_ADDRESS`). Compose does
+not publish the metrics port to the host. To scrape from another container,
+bind metrics to `0.0.0.0`, configure a strong `METRICS_AUTH_TOKEN`, and connect
+to `oracle:9091` on the Compose network. Configuration rejects a non-loopback
+metrics bind without a token.
 
-Endpoints are exposed on the host as `http://localhost:9090` via the docker-compose port mapping.
+The health endpoint is published only on host loopback as
+`http://localhost:9090`; Docker's health check continues to call it inside the
+container.
 
 ## Metrics Reference
 
-| Metric | Type | Labels | Description |
-|--------|------|--------|-------------|
-| `oracle_requests_observed_total` | Counter | `raffle` | `RandomnessRequested` events enqueued for this oracle |
-| `oracle_request_latency_seconds` | Histogram | — | Wall time from event observation to confirmed on-chain submission |
-| `oracle_submissions_total` | Counter | `outcome` | Submission results: `success`, `retry`, or `fatal` |
-| `oracle_queue_depth` | Gauge | — | Current number of pending randomness jobs |
-| `oracle_queue_oldest_age_seconds` | Gauge | — | Age of the oldest queued job in seconds |
-| `oracle_dead_letter_total` | Counter | — | Jobs permanently failed after exhausting retries |
-| `oracle_listener_ledger_lag` | Gauge | — | Ledgers between network tip and last processed checkpoint |
-| `oracle_rpc_errors_total` | Counter | `kind` | RPC errors by phase: `poll`, `simulate`, `send` |
-| `oracle_fees_spent_stroops_total` | Counter | — | Cumulative transaction fees paid for submissions |
+| Metric                            | Type      | Labels    | Description                                                       |
+| --------------------------------- | --------- | --------- | ----------------------------------------------------------------- |
+| `oracle_requests_observed_total`  | Counter   | `raffle`  | `RandomnessRequested` events enqueued for this oracle             |
+| `oracle_request_latency_seconds`  | Histogram | —         | Wall time from event observation to confirmed on-chain submission |
+| `oracle_submissions_total`        | Counter   | `outcome` | Submission results: `success`, `retry`, or `fatal`                |
+| `oracle_queue_depth`              | Gauge     | —         | Current number of pending randomness jobs                         |
+| `oracle_queue_oldest_age_seconds` | Gauge     | —         | Age of the oldest queued job in seconds                           |
+| `oracle_dead_letter_total`        | Counter   | —         | Jobs permanently failed after exhausting retries                  |
+| `oracle_listener_ledger_lag`      | Gauge     | —         | Ledgers between network tip and last processed checkpoint         |
+| `oracle_rpc_errors_total`         | Counter   | `kind`    | RPC errors by phase: `poll`, `simulate`, `send`                   |
+| `oracle_fees_spent_stroops_total` | Counter   | —         | Cumulative transaction fees paid for submissions                  |
 
 ## Suggested Alert Rules
 
@@ -215,7 +224,7 @@ Env: `ALERT_FAILURE_THRESHOLD=3` (consecutive failures before webhook alert)
 
 ### Tradeoffs and mitigation
 
-- Marking deduplication *after* successful submission avoids lost requests, but introduces a tiny window where a crash after on-chain success but before persistence could lead to duplicate submission.
+- Marking deduplication _after_ successful submission avoids lost requests, but introduces a tiny window where a crash after on-chain success but before persistence could lead to duplicate submission.
 - The dedup store is written synchronously to disk on each check.
 - The ledger checkpoint ensures we don't skip events silently.
 
@@ -225,34 +234,36 @@ The oracle emits structured JSON logs (via `pino`). In development, logs are for
 
 ### Common fields
 
-| Field | Type | Description |
-|---|---|---|
-| `level` | number | Pino log level (10=debug, 30=warn, 50=error) |
-| `msg` | string | Human-readable log message |
-| `time` | string | ISO-8601 timestamp |
-| `pid` | number | Process ID |
-| `hostname` | string | Machine hostname |
+| Field      | Type   | Description                                  |
+| ---------- | ------ | -------------------------------------------- |
+| `level`    | number | Pino log level (10=debug, 30=warn, 50=error) |
+| `msg`      | string | Human-readable log message                   |
+| `time`     | string | ISO-8601 timestamp                           |
+| `pid`      | number | Process ID                                   |
+| `hostname` | string | Machine hostname                             |
 
 ### Request-correlation fields
 
 When processing a randomness request, logs are emitted from a child logger bound with:
 
-| Field | Description |
-|---|---|
+| Field       | Description                                                      |
+| ----------- | ---------------------------------------------------------------- |
 | `requestId` | BigInt string of the on-chain `RandomnessRequested` `request_id` |
-| `raffleId` | Soroban contract ID of the raffle |
+| `raffleId`  | Soroban contract ID of the raffle                                |
 
 These fields allow you to `grep` a single `requestId` across listener → queue → VRF → submission.
 
 ### Example log lines
 
 **Production (JSON):**
+
 ```json
 {"level":30,"time":"2026-08-29T08:00:00.000Z","pid":1234,"hostname":"oracle-1","msg":"Enqueuing randomness request","requestId":"42","raffleContract":"CABC...","timestamp":"1234567890"}
 {"level":30,"time":"2026-08-29T08:00:01.000Z","pid":1234,"hostname":"oracle-1","requestId":"42","raffleId":"CABC...","msg":"Successfully submitted provide_randomness: abc123..."}
 ```
 
 **Development (pretty):**
+
 ```
 [2026-08-29 08:00:00.000 +0000] WARN: Enqueuing randomness request requestId=42 raffleId=CABC...
 [2026-08-29 08:00:01.000 +0000] WARN: Successfully submitted provide_randomness: abc123... requestId=42 raffleId=CABC...

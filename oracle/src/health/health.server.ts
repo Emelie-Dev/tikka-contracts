@@ -16,7 +16,7 @@ export function startHealthServer(options: HealthServerOptions = {}): http.Serve
   const port = options.port ?? 3000;
   const { healthCheck } = options;
 
-  const server = http.createServer(async (req, res) => {
+  const health = http.createServer((req, res) => {
     const path = req.url?.split('?')[0];
 
     try {
@@ -58,6 +58,7 @@ export function startHealthServer(options: HealthServerOptions = {}): http.Serve
     }
   });
 
-  server.listen(port);
-  return server;
+  health.listen(port, '0.0.0.0');
+  metrics.listen(metricsPort, metricsBindAddress);
+  return { health, metrics };
 }
