@@ -881,7 +881,7 @@ if config.randomness_source == RandomnessSource::External {
         env: Env,
         caller: Address,
         ticket_ids: Vec<u32>,
-    ) -> Result<i128, Error> {
+    ) -> Result<u32, Error> {
         claim::batch_refund_tickets(env, caller, ticket_ids)
     }
 

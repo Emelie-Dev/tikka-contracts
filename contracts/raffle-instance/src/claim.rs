@@ -267,19 +267,28 @@ pub(crate) fn batch_refund_tickets(
     env: Env,
     caller: Address,
     ticket_ids: soroban_sdk::Vec<u32>,
-) -> Result<i128, Error> {
+) -> Result<u32, Error> {
     let raffle = read_raffle(&env)?;
-    if raffle.status != RaffleStatus::Cancelled && raffle.status != RaffleStatus::Failed { return Err(Error::InvalidStatus); }
+    if raffle.status != RaffleStatus::Cancelled && raffle.status != RaffleStatus::Failed {
+        return Err(Error::InvalidStatus);
+    }
+    if ticket_ids.len() > MAX_BATCH_REFUND_PER_CALL {
+        return Err(Error::InvalidParameters);
+    }
 
     let _guard = Guard::new(&env)?;
     caller.require_auth();
-    
+
     let token_client = token::Client::new(&env, &raffle.payment_token);
-    let mut total_refunded: i128 = 0;
+    let mut refunded_count: u32 = 0;
 
     for ticket_id in ticket_ids.iter() {
-        let ticket: crate::Ticket = env.storage().persistent().get(&DataKey::Ticket(ticket_id)).ok_or(Error::TicketNotFound)?;
-        
+        let ticket: crate::Ticket = env
+            .storage()
+            .persistent()
+            .get(&DataKey::Ticket(ticket_id))
+            .ok_or(Error::TicketNotFound)?;
+
         if caller != ticket.payer && caller != ticket.owner {
             return Err(Error::NotAuthorized);
         }
@@ -295,5 +304,5 @@ pub(crate) fn batch_refund_tickets(
         }
     }
 
-    Ok(total_refunded)
+    Ok(refunded_count)
 }

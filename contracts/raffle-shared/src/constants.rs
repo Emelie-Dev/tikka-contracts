@@ -91,6 +91,9 @@ pub const DEFAULT_CLAIM_EXPIRY_SECONDS: u64 = MIN_CLAIM_EXPIRY_SECONDS;
 /// Maximum unclaimed prize tiers processed in a single `sweep_unclaimed` call.
 pub const MAX_SWEEP_UNCLAIMED_PER_CALL: u32 = 10;
 
+/// Maximum tickets refunded in a single `batch_refund_tickets` call.
+pub const MAX_BATCH_REFUND_PER_CALL: u32 = 10;
+
 /// Default window (seconds) added to the current timestamp when submitting
 /// token-swap transactions.  Equals 5 minutes.
 pub const DEFAULT_SWAP_DEADLINE_SECONDS: u64 = 300;
