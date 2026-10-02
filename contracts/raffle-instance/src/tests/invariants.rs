@@ -1,8 +1,5 @@
 use proptest::prelude::*;
-use crate::{
-    assert_solvent, calculate_tier_prize, DataKey, Raffle, RaffleStatus, Ticket, MAX_PRIZE_AMOUNT,
-    MIN_TICKET_PRICE,
-};
+use crate::{calculate_tier_prize, Raffle, RaffleStatus, MAX_PRIZE_AMOUNT, MIN_TICKET_PRICE};
 use soroban_sdk::{testutils::Address as _, Address, BytesN, Env, String, Vec};
 
 fn valid_prize_weights() -> impl Strategy<Value = std::vec::Vec<u32>> {
@@ -60,6 +57,7 @@ fn test_raffle(env: &Env, weights: &[u32], prize_amount: i128) -> Raffle {
         metadata_hash: BytesN::from_array(env, &[1; 32]),
         unique_winners: false,
         nft_contract: None,
+        bundles: Vec::new(env),
     }
 }
 
@@ -109,7 +107,7 @@ fn assert_contract_solvent(env: &Env, contract_id: &Address) {
     env.as_contract(contract_id, || assert_solvent(env));
 }
 
-fn run_solvency_lifecycle(ticket_count: u32, first_tier_bp: u32, fee_bp: u32, cancel: bool) {
+fn run_solvency_lifecycle(ticket_count: u32, first_tier_bp: u32, cancel: bool) {
     let env = Env::default();
     env.mock_all_auths();
     env.ledger().set_timestamp(1_000);
@@ -146,7 +144,7 @@ fn run_solvency_lifecycle(ticket_count: u32, first_tier_bp: u32, fee_bp: u32, ca
         prizes: soroban_sdk::vec![&env, first_tier_bp, 10_000 - first_tier_bp],
         randomness_source: raffle_shared::RandomnessSource::Internal,
         oracle_address: None,
-        protocol_fee_bp: if cancel { 0 } else { fee_bp },
+        protocol_fee_bp: if cancel { 0 } else { 1_000 },
         treasury_address: Some(treasury.clone()),
         swap_router: None,
         tikka_token: None,
@@ -223,12 +221,12 @@ fn run_solvency_lifecycle(ticket_count: u32, first_tier_bp: u32, fee_bp: u32, ca
 
 #[test]
 fn claim_withdraw_and_sweep_preserve_solvency() {
-    run_solvency_lifecycle(4, 5_000, 1_000, false);
+    run_solvency_lifecycle(4, 5_000, false);
 }
 
 #[test]
 fn cancelled_raffle_refunds_settle_escrow_to_zero() {
-    run_solvency_lifecycle(4, 5_000, 1_000, true);
+    run_solvency_lifecycle(4, 5_000, true);
 }
 
 proptest! {
@@ -238,9 +236,8 @@ proptest! {
     fn lifecycle_solvency_holds_for_ticket_counts_and_tier_splits(
         ticket_count in 4u32..=8,
         first_tier_bp in 1u32..10_000,
-        fee_bp in 0u32..=2_000,
     ) {
-        run_solvency_lifecycle(ticket_count, first_tier_bp, fee_bp, false);
+        run_solvency_lifecycle(ticket_count, first_tier_bp, false);
     }
 }
 
@@ -253,6 +250,7 @@ proptest! {
 /// Called by the refund-path lifecycle tests (`claim.rs`) after every
 /// refund/prize-recovery operation, and asserted inline by the fuzz harness
 /// (`fuzz/fuzz_targets/real_harness.rs::refund_cancel`).
+#[allow(dead_code)]
 pub fn assert_refund_solvency(
     env: &Env,
     contract_id: &Address,

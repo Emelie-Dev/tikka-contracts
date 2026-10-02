@@ -117,6 +117,9 @@ pub struct TicketPurchased {
 }
 
 /// Emitted when tickets are bought for another address (a gift).
+///
+/// Note: currently `#[allow(dead_code)]` — gifted purchases publish
+/// [`TicketPurchased`] instead.
 #[allow(dead_code)]
 #[derive(Clone)]
 #[contractevent]
@@ -496,6 +499,9 @@ pub struct SwapDeadlineUpdated {
 }
 
 /// Emitted when the raffle end time is extended.
+///
+/// Note: currently `#[allow(dead_code)]` — no end-time extension entrypoint
+/// is wired up yet.
 #[allow(dead_code)]
 #[derive(Clone)]
 #[contractevent]
@@ -545,6 +551,9 @@ pub struct AdminChanged {
 
 /// Emitted once per NFT receipt is successfully minted
 /// by the configured `nft_contract`.
+///
+/// Note: currently `#[allow(dead_code)]` — minting is performed by the
+/// external `nft_contract`, which is not called from this contract yet.
 #[allow(dead_code)]
 #[derive(Clone)]
 #[contractevent]
