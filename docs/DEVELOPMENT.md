@@ -6,16 +6,12 @@ not imply that the workspace currently compiles.
 
 ## Prerequisites
 
-- Rust and `rustup`
-- The `wasm32-unknown-unknown` Rust target
-- Stellar CLI compatible with the deployment scripts
+- Rust and `rustup` (toolchain version pinned in `rust-toolchain.toml`)
+- Stellar CLI `23.4.1` — must match `STELLAR_CLI_VERSION` in `scripts/common.sh`
 - Node.js 20 or newer for `oracle/`
 
-Install the WebAssembly target with:
-
-```bash
-rustup target add wasm32-unknown-unknown
-```
+The correct WASM target (`wasm32v1-none`) and Rust toolchain channel are declared
+in `rust-toolchain.toml` and picked up automatically by `rustup`.
 
 ## Local Checks
 
@@ -45,7 +41,11 @@ make docs-events    # regenerate + git diff docs/EVENTS.md
 make shellcheck     # shellcheck scripts/*.sh
 ```
 
-For the oracle service:
+This single command covers: orphan-module check, formatting, compile check,
+contract build, WASM size gate, docs sync, clippy, tests, doc tests, shellcheck,
+and the full oracle pipeline (format, lint, typecheck, tests).
+
+For faster, focused iteration during development:
 
 ```bash
 make oracle-fmt-check   # Prettier formatting check

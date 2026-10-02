@@ -11,6 +11,11 @@ pub use math::{apply_bp, split_bp, BP_DENOMINATOR};
 
 pub use config_builder::{ConfigValidationError, RaffleConfigBuilder};
 
+/// Apply a basis-point rate using floor division, returning `None` on overflow.
+pub fn apply_bp(amount: i128, bp: u32) -> Option<i128> {
+    amount.checked_mul(bp as i128).map(|value| value / 10_000)
+}
+
 #[cfg(test)]
 mod nft_mint_test;
 use soroban_sdk::{contracttype, Address, BytesN, String, Vec};
@@ -154,6 +159,8 @@ pub enum RandomnessType {
     Vrf = 1,
     /// Fallback path used when preferred randomness path is unavailable.
     Fallback = 2,
+    /// k-of-n quorum of oracles; seed is aggregated from revealed quorum
+    /// contributions after each reveal was verified against its commitment.
     Quorum = 3,
 }
 
@@ -218,6 +225,8 @@ pub struct RaffleConfig {
     pub randomness_source: RandomnessSource,
     /// Optional oracle contract address for external randomness flows.
     pub oracle_address: Option<Address>,
+    /// Protocol fee in basis points (100 = 1%), applied to ticket purchases
+    /// and prize claims. See docs/FEE_MODEL.md for the fee model.
     /// Ed25519 public key (32 bytes) belonging to the registered oracle.
     ///
     /// Required when `randomness_source == External`.  The raffle-instance
@@ -451,7 +460,7 @@ pub enum AdminOp {
 #[derive(Clone, Debug, PartialEq, Eq)]
 #[contracttype]
 pub struct BuyQuote {
-    /// Gross total before discount: `ticket_price × quantity`.
+    /// Gross total before discount
     pub gross: i128,
     /// Total early-bird discount applied.
     pub discount: i128,
