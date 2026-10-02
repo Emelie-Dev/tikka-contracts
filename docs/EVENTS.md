@@ -47,11 +47,11 @@ Emitted when a proposed timelocked admin operation is cancelled.
 
 Topic: `tikka:admin_op_cancelled`
 
-| Field | Type | Flags | Description |
-|-------|------|-------|-------------|
-| `op_id` | `u32` |  | Sequential op ID (1-based) of the cancelled operation. |
-| `cancelled_by` | `Address` |  | Admin that cancelled the op. |
-| `cancelled_at` | `u64` |  | Ledger timestamp of the cancellation. |
+| Field          | Type      | Flags | Description                                            |
+| -------------- | --------- | ----- | ------------------------------------------------------ |
+| `op_id`        | `u32`     |       | Sequential op ID (1-based) of the cancelled operation. |
+| `cancelled_by` | `Address` |       | Admin that cancelled the op.                           |
+| `cancelled_at` | `u64`     |       | Ledger timestamp of the cancellation.                  |
 
 **Emitted by:** `cancel_config_change`
 
@@ -63,12 +63,12 @@ Emitted when a proposed admin operation is executed after its timelock elapsed.
 
 Topic: `tikka:admin_op_executed`
 
-| Field | Type | Flags | Description |
-|-------|------|-------|-------------|
-| `op_id` | `u32` |  | Sequential op ID (1-based) of the executed operation. |
-| `op` | `AdminOp` |  | Operation payload that was executed. |
-| `executed_by` | `Address` |  | Admin that executed the op. |
-| `executed_at` | `u64` |  | Ledger timestamp of execution. |
+| Field         | Type      | Flags | Description                                           |
+| ------------- | --------- | ----- | ----------------------------------------------------- |
+| `op_id`       | `u32`     |       | Sequential op ID (1-based) of the executed operation. |
+| `op`          | `AdminOp` |       | Operation payload that was executed.                  |
+| `executed_by` | `Address` |       | Admin that executed the op.                           |
+| `executed_at` | `u64`     |       | Ledger timestamp of execution.                        |
 
 **Emitted by:** `execute_config_change`
 
@@ -80,12 +80,12 @@ Emitted when a new admin operation is proposed through the timelock mechanism.
 
 Topic: `tikka:admin_op_proposed`
 
-| Field | Type | Flags | Description |
-|-------|------|-------|-------------|
-| `op_id` | `u32` |  | Sequential op ID (1-based) that identifies the proposed operation. |
-| `op` | `AdminOp` |  | Operation payload being proposed. |
-| `effective_timestamp` | `u64` |  | Ledger timestamp at which the op becomes executable. |
-| `proposed_by` | `Address` |  | Admin that proposed the op. |
+| Field                 | Type      | Flags | Description                                                        |
+| --------------------- | --------- | ----- | ------------------------------------------------------------------ |
+| `op_id`               | `u32`     |       | Sequential op ID (1-based) that identifies the proposed operation. |
+| `op`                  | `AdminOp` |       | Operation payload being proposed.                                  |
+| `effective_timestamp` | `u64`     |       | Ledger timestamp at which the op becomes executable.               |
+| `proposed_by`         | `Address` |       | Admin that proposed the op.                                        |
 
 **Emitted by:** `propose_fee_change`, `propose_wasm_upgrade`, `set_config`
 
@@ -97,11 +97,11 @@ Emitted when the proposed admin accepts the admin transfer.
 
 Topic: `tikka:admin_transfer_accepted`
 
-| Field | Type | Flags | Description |
-|-------|------|-------|-------------|
-| `old_admin` | `Address` |  | Admin before the transfer. |
-| `new_admin` | `Address` |  | Admin after the transfer. |
-| `timestamp` | `u64` |  | Ledger timestamp of the acceptance. |
+| Field       | Type      | Flags | Description                         |
+| ----------- | --------- | ----- | ----------------------------------- |
+| `old_admin` | `Address` |       | Admin before the transfer.          |
+| `new_admin` | `Address` |       | Admin after the transfer.           |
+| `timestamp` | `u64`     |       | Ledger timestamp of the acceptance. |
 
 **Emitted by:** `accept_factory_admin`
 
@@ -109,18 +109,18 @@ Topic: `tikka:admin_transfer_accepted`
 
 ## AdminTransferFailed
 
-Emitted when an admin transfer proposal fails.  Note: this event is `#[allow(dead_code)]` in the current implementation.
+Emitted when an admin transfer proposal fails. Note: this event is `#[allow(dead_code)]` in the current implementation.
 
 Topic: `tikka:admin_transfer_failed`
 
-| Field | Type | Flags | Description |
-|-------|------|-------|-------------|
-| `current_admin` | `Address` |  | Current admin at the time of the failed transfer. |
-| `proposed_admin` | `Address` |  | Admin that was proposed. |
-| `reason_code` | `u32` |  | Numeric failure reason code. |
-| `timestamp` | `u64` |  | Ledger timestamp of the failure. |
+| Field            | Type      | Flags | Description                                       |
+| ---------------- | --------- | ----- | ------------------------------------------------- |
+| `current_admin`  | `Address` |       | Current admin at the time of the failed transfer. |
+| `proposed_admin` | `Address` |       | Admin that was proposed.                          |
+| `reason_code`    | `u32`     |       | Numeric failure reason code.                      |
+| `timestamp`      | `u64`     |       | Ledger timestamp of the failure.                  |
 
-**Emitted by:** *(no live call sites — defined but not currently published)*
+**Emitted by:** _(no live call sites — defined but not currently published)_
 
 ---
 
@@ -130,11 +130,11 @@ Emitted when an admin proposes transferring factory admin to a new address.
 
 Topic: `tikka:admin_transfer_proposed`
 
-| Field | Type | Flags | Description |
-|-------|------|-------|-------------|
-| `current_admin` | `Address` |  | Current admin. |
-| `proposed_admin` | `Address` |  | Admin proposed as replacement. |
-| `timestamp` | `u64` |  | Ledger timestamp of the proposal. |
+| Field            | Type      | Flags | Description                       |
+| ---------------- | --------- | ----- | --------------------------------- |
+| `current_admin`  | `Address` |       | Current admin.                    |
+| `proposed_admin` | `Address` |       | Admin proposed as replacement.    |
+| `timestamp`      | `u64`     |       | Ledger timestamp of the proposal. |
 
 **Emitted by:** `transfer_factory_admin`
 
@@ -146,12 +146,12 @@ Emitted periodically to create a verifiable state checkpoint of all tracked raff
 
 Topic: `tikka:checkpoint_created`
 
-| Field | Type | Flags | Description |
-|-------|------|-------|-------------|
-| `index` | `u32` |  | 1-based checkpoint sequence number (`raffle_count / CHECKPOINT_INTERVAL`). |
-| `raffle_count` | `u32` |  | Number of raffles recorded when the checkpoint was taken. |
-| `ledger_timestamp` | `u64` |  | Ledger timestamp of the checkpoint. |
-| `aggregate_hash` | `BytesN<32>` |  | SHA-256 over the checkpoint inputs (raffle count, ledger sequence, timestamp). |
+| Field              | Type         | Flags | Description                                                                    |
+| ------------------ | ------------ | ----- | ------------------------------------------------------------------------------ |
+| `index`            | `u32`        |       | 1-based checkpoint sequence number (`raffle_count / CHECKPOINT_INTERVAL`).     |
+| `raffle_count`     | `u32`        |       | Number of raffles recorded when the checkpoint was taken.                      |
+| `ledger_timestamp` | `u64`        |       | Ledger timestamp of the checkpoint.                                            |
+| `aggregate_hash`   | `BytesN<32>` |       | SHA-256 over the checkpoint inputs (raffle count, ledger sequence, timestamp). |
 
 **Emitted by:** `maybe_create_checkpoint`
 
@@ -163,10 +163,10 @@ Emitted when raffle creation is paused for the whole factory.
 
 Topic: `tikka:creation_paused`
 
-| Field | Type | Flags | Description |
-|-------|------|-------|-------------|
-| `paused_by` | `Address` |  | Address that paused raffle creation. |
-| `timestamp` | `u64` |  | Ledger timestamp of the pause. |
+| Field       | Type      | Flags | Description                          |
+| ----------- | --------- | ----- | ------------------------------------ |
+| `paused_by` | `Address` |       | Address that paused raffle creation. |
+| `timestamp` | `u64`     |       | Ledger timestamp of the pause.       |
 
 **Emitted by:** `set_creation_paused`
 
@@ -178,11 +178,11 @@ Emitted when a creator is rate-limited from creating new raffles.
 
 Topic: `tikka:creation_rate_limited`
 
-| Field | Type | Flags | Description |
-|-------|------|-------|-------------|
-| `creator` | `Address` |  | Creator that was rate-limited. |
-| `unlock_timestamp` | `u64` |  | Ledger timestamp at which creation is allowed again. |
-| `timestamp` | `u64` |  | Ledger timestamp of the rate-limit event. |
+| Field              | Type      | Flags | Description                                          |
+| ------------------ | --------- | ----- | ---------------------------------------------------- |
+| `creator`          | `Address` |       | Creator that was rate-limited.                       |
+| `unlock_timestamp` | `u64`     |       | Ledger timestamp at which creation is allowed again. |
+| `timestamp`        | `u64`     |       | Ledger timestamp of the rate-limit event.            |
 
 **Emitted by:** `create_raffle`
 
@@ -194,10 +194,10 @@ Emitted when raffle creation is resumed after being paused.
 
 Topic: `tikka:creation_unpaused`
 
-| Field | Type | Flags | Description |
-|-------|------|-------|-------------|
-| `unpaused_by` | `Address` |  | Address that unpaused raffle creation. |
-| `timestamp` | `u64` |  | Ledger timestamp of the resume. |
+| Field         | Type      | Flags | Description                            |
+| ------------- | --------- | ----- | -------------------------------------- |
+| `unpaused_by` | `Address` |       | Address that unpaused raffle creation. |
+| `timestamp`   | `u64`     |       | Ledger timestamp of the resume.        |
 
 **Emitted by:** `set_creation_paused`
 
@@ -209,12 +209,12 @@ Emitted when the factory contract is initialized for the first time.
 
 Topic: `tikka:factory_initialized`
 
-| Field | Type | Flags | Description |
-|-------|------|-------|-------------|
-| `admin` | `Address` |  | Admin of the factory. |
-| `protocol_fee_bp` | `u32` |  | Protocol fee (basis points) applied to prizes. |
-| `treasury` | `Address` |  | Treasury address that receives protocol fees. |
-| `timestamp` | `u64` |  | Ledger timestamp of initialization. |
+| Field             | Type      | Flags | Description                                    |
+| ----------------- | --------- | ----- | ---------------------------------------------- |
+| `admin`           | `Address` |       | Admin of the factory.                          |
+| `protocol_fee_bp` | `u32`     |       | Protocol fee (basis points) applied to prizes. |
+| `treasury`        | `Address` |       | Treasury address that receives protocol fees.  |
+| `timestamp`       | `u64`     |       | Ledger timestamp of initialization.            |
 
 **Emitted by:** `init_factory`
 
@@ -226,13 +226,13 @@ Emitted when tokens are rescued out of the factory contract.
 
 Topic: `tikka:factory_tokens_rescued`
 
-| Field | Type | Flags | Description |
-|-------|------|-------|-------------|
-| `rescued_by` | `Address` |  | Address that rescued the tokens. |
-| `token` | `Address` |  | Token that was rescued. |
-| `recipient` | `Address` |  | Address the rescued funds were sent to. |
-| `amount` | `i128` |  | Amount rescued. |
-| `timestamp` | `u64` |  | Ledger timestamp of the rescue. |
+| Field        | Type      | Flags | Description                             |
+| ------------ | --------- | ----- | --------------------------------------- |
+| `rescued_by` | `Address` |       | Address that rescued the tokens.        |
+| `token`      | `Address` |       | Token that was rescued.                 |
+| `recipient`  | `Address` |       | Address the rescued funds were sent to. |
+| `amount`     | `i128`    |       | Amount rescued.                         |
+| `timestamp`  | `u64`     |       | Ledger timestamp of the rescue.         |
 
 **Emitted by:** `rescue_tokens`
 
@@ -244,11 +244,11 @@ Emitted when the factory contract is upgraded to new wasm code.
 
 Topic: `tikka:factory_upgraded`
 
-| Field | Type | Flags | Description |
-|-------|------|-------|-------------|
-| `admin` | `Address` |  | Admin that triggered the upgrade. |
-| `new_wasm_hash` | `BytesN<32>` |  | SHA-256 wasm hash of the new contract code. |
-| `timestamp` | `u64` |  | Ledger timestamp of the upgrade. |
+| Field           | Type         | Flags | Description                                 |
+| --------------- | ------------ | ----- | ------------------------------------------- |
+| `admin`         | `Address`    |       | Admin that triggered the upgrade.           |
+| `new_wasm_hash` | `BytesN<32>` |       | SHA-256 wasm hash of the new contract code. |
+| `timestamp`     | `u64`        |       | Ledger timestamp of the upgrade.            |
 
 **Emitted by:** `upgrade`
 
@@ -260,11 +260,11 @@ Emitted when the entire factory (creation, pauses, and every live raffle) is put
 
 Topic: `tikka:global_emergency_paused`
 
-| Field | Type | Flags | Description |
-|-------|------|-------|-------------|
-| `paused_by` | `Address` |  | Address that paused the whole factory. |
-| `reason` | `soroban_sdk::String` |  | Free-text reason for the emergency pause. |
-| `timestamp` | `u64` |  | Ledger timestamp of the pause. |
+| Field       | Type                  | Flags | Description                               |
+| ----------- | --------------------- | ----- | ----------------------------------------- |
+| `paused_by` | `Address`             |       | Address that paused the whole factory.    |
+| `reason`    | `soroban_sdk::String` |       | Free-text reason for the emergency pause. |
+| `timestamp` | `u64`                 |       | Ledger timestamp of the pause.            |
 
 **Emitted by:** `emergency_pause_all`
 
@@ -276,10 +276,10 @@ Emitted when the factory-wide emergency pause is lifted.
 
 Topic: `tikka:global_emergency_unpaused`
 
-| Field | Type | Flags | Description |
-|-------|------|-------|-------------|
-| `unpaused_by` | `Address` |  | Address that lifted the emergency pause. |
-| `timestamp` | `u64` |  | Ledger timestamp of the resume. |
+| Field         | Type      | Flags | Description                              |
+| ------------- | --------- | ----- | ---------------------------------------- |
+| `unpaused_by` | `Address` |       | Address that lifted the emergency pause. |
+| `timestamp`   | `u64`     |       | Ledger timestamp of the resume.          |
 
 **Emitted by:** `emergency_unpause_all`
 
@@ -291,12 +291,12 @@ Emitted when a finished raffle instance's storage is cleaned up from the factory
 
 Topic: `tikka:raffle_cleaned_up`
 
-| Field | Type | Flags | Description |
-|-------|------|-------|-------------|
-| `raffle_address` | `Address` |  | Address of the raffle instance that was cleaned up. |
-| `cleaned_by` | `Address` |  | Address that performed the cleanup. |
-| `finish_time` | `u64` |  | Timestamp at which the raffle was finalized. |
-| `cleaned_at` | `u64` |  | Ledger timestamp of the cleanup. |
+| Field            | Type      | Flags | Description                                         |
+| ---------------- | --------- | ----- | --------------------------------------------------- |
+| `raffle_address` | `Address` |       | Address of the raffle instance that was cleaned up. |
+| `cleaned_by`     | `Address` |       | Address that performed the cleanup.                 |
+| `finish_time`    | `u64`     |       | Timestamp at which the raffle was finalized.        |
+| `cleaned_at`     | `u64`     |       | Ledger timestamp of the cleanup.                    |
 
 **Emitted by:** `clean_old_raffle`
 
@@ -304,18 +304,18 @@ Topic: `tikka:raffle_cleaned_up`
 
 ## RaffleInstanceDeployed
 
-Emitted when the factory deploys a new raffle instance contract.  Note: this event is `#[allow(dead_code)]` in the current implementation.
+Emitted when the factory deploys a new raffle instance contract. Note: this event is `#[allow(dead_code)]` in the current implementation.
 
 Topic: `tikka:raffle_instance_deployed`
 
-| Field | Type | Flags | Description |
-|-------|------|-------|-------------|
-| `instance` | `Address` |  | Address of the deployed raffle instance. |
-| `wasm_hash` | `BytesN<32>` |  | SHA-256 wasm hash of the deployed instance code. |
-| `creator` | `Address` |  | Address that deployed the instance. |
-| `timestamp` | `u64` |  | Ledger timestamp of the deployment. |
+| Field       | Type         | Flags | Description                                      |
+| ----------- | ------------ | ----- | ------------------------------------------------ |
+| `instance`  | `Address`    |       | Address of the deployed raffle instance.         |
+| `wasm_hash` | `BytesN<32>` |       | SHA-256 wasm hash of the deployed instance code. |
+| `creator`   | `Address`    |       | Address that deployed the instance.              |
+| `timestamp` | `u64`        |       | Ledger timestamp of the deployment.              |
 
-**Emitted by:** *(no live call sites — defined but not currently published)*
+**Emitted by:** _(no live call sites — defined but not currently published)_
 
 ---
 
@@ -325,12 +325,12 @@ Emitted when a recurring raffle schedule is cancelled.
 
 Topic: `tikka:recurring_raffle_cancelled`
 
-| Field | Type | Flags | Description |
-|-------|------|-------|-------------|
-| `recurring_id` | `u32` |  | Unique ID of the recurring raffle schedule. |
-| `cancelled_by` | `Address` |  | Address that cancelled the schedule. |
-| `rounds_completed` | `u32` |  | Total number of rounds completed before cancellation. |
-| `timestamp` | `u64` |  | Ledger timestamp of the cancellation. |
+| Field              | Type      | Flags | Description                                           |
+| ------------------ | --------- | ----- | ----------------------------------------------------- |
+| `recurring_id`     | `u32`     |       | Unique ID of the recurring raffle schedule.           |
+| `cancelled_by`     | `Address` |       | Address that cancelled the schedule.                  |
+| `rounds_completed` | `u32`     |       | Total number of rounds completed before cancellation. |
+| `timestamp`        | `u64`     |       | Ledger timestamp of the cancellation.                 |
 
 **Emitted by:** `cancel_recurring_raffle`
 
@@ -361,13 +361,13 @@ Emitted each time a recurring raffle schedule fires a new round.
 
 Topic: `tikka:recurring_round_triggered`
 
-| Field | Type | Flags | Description |
-|-------|------|-------|-------------|
-| `recurring_id` | `u32` |  | Unique ID of the recurring raffle schedule. |
-| `round` | `u32` |  | 1-based round number that just fired. |
-| `raffle_address` | `Address` |  | Address of the raffle instance created for this round. |
-| `next_due` | `u64` |  | Ledger timestamp of the next scheduled round. |
-| `timestamp` | `u64` |  | Ledger timestamp of the trigger. |
+| Field            | Type      | Flags | Description                                            |
+| ---------------- | --------- | ----- | ------------------------------------------------------ |
+| `recurring_id`   | `u32`     |       | Unique ID of the recurring raffle schedule.            |
+| `round`          | `u32`     |       | 1-based round number that just fired.                  |
+| `raffle_address` | `Address` |       | Address of the raffle instance created for this round. |
+| `next_due`       | `u64`     |       | Ledger timestamp of the next scheduled round.          |
+| `timestamp`      | `u64`     |       | Ledger timestamp of the trigger.                       |
 
 **Emitted by:** `trigger_next_round`
 
@@ -375,35 +375,35 @@ Topic: `tikka:recurring_round_triggered`
 
 ## SupportedSacUpdated
 
-Emitted when a Stellar Asset Contract (SAC) token's support status is updated.  Note: this event is `#[allow(dead_code)]` in the current implementation.
+Emitted when a Stellar Asset Contract (SAC) token's support status is updated. Note: this event is `#[allow(dead_code)]` in the current implementation.
 
 Topic: `tikka:supported_sac_updated`
 
-| Field | Type | Flags | Description |
-|-------|------|-------|-------------|
-| `token` | `Address` |  | Token whose SAC support flag changed. |
-| `supported` | `bool` |  | Whether the token is supported for SAC-assisted settlement. |
-| `updated_by` | `Address` |  | Address that updated the flag. |
-| `timestamp` | `u64` |  | Ledger timestamp of the update. |
+| Field        | Type      | Flags | Description                                                 |
+| ------------ | --------- | ----- | ----------------------------------------------------------- |
+| `token`      | `Address` |       | Token whose SAC support flag changed.                       |
+| `supported`  | `bool`    |       | Whether the token is supported for SAC-assisted settlement. |
+| `updated_by` | `Address` |       | Address that updated the flag.                              |
+| `timestamp`  | `u64`     |       | Ledger timestamp of the update.                             |
 
-**Emitted by:** *(no live call sites — defined but not currently published)*
+**Emitted by:** _(no live call sites — defined but not currently published)_
 
 ---
 
 ## TreasuryChanged
 
-Emitted when the factory treasury address is changed.  Note: this event is `#[allow(dead_code)]` in the current implementation.
+Emitted when the factory treasury address is changed. Note: this event is `#[allow(dead_code)]` in the current implementation.
 
 Topic: `tikka:treasury_changed`
 
-| Field | Type | Flags | Description |
-|-------|------|-------|-------------|
-| `old_treasury` | `Address` |  | Treasury before the change. |
-| `new_treasury` | `Address` |  | Treasury after the change. |
-| `changed_by` | `Address` | topic | Topic: address that changed the treasury. |
-| `timestamp` | `u64` |  | Ledger timestamp of the change. |
+| Field          | Type      | Flags | Description                               |
+| -------------- | --------- | ----- | ----------------------------------------- |
+| `old_treasury` | `Address` |       | Treasury before the change.               |
+| `new_treasury` | `Address` |       | Treasury after the change.                |
+| `changed_by`   | `Address` | topic | Topic: address that changed the treasury. |
+| `timestamp`    | `u64`     |       | Ledger timestamp of the change.           |
 
-**Emitted by:** *(no live call sites — defined but not currently published)*
+**Emitted by:** _(no live call sites — defined but not currently published)_
 
 ---
 
@@ -413,18 +413,18 @@ Defined in `contracts\raffle-instance\src\events.rs`.
 
 ## AdminChanged
 
-Emitted when the raffle admin is changed.  Note: this event is `#[allow(dead_code)]` in the current implementation.
+Emitted when the raffle admin is changed. Note: this event is `#[allow(dead_code)]` in the current implementation.
 
 Topic: `tikka:admin_changed`
 
-| Field | Type | Flags | Description |
-|-------|------|-------|-------------|
-| `old_admin` | `Address` |  | Admin before the change. |
-| `new_admin` | `Address` |  | Admin after the change. |
+| Field        | Type      | Flags | Description                            |
+| ------------ | --------- | ----- | -------------------------------------- |
+| `old_admin`  | `Address` |       | Admin before the change.               |
+| `new_admin`  | `Address` |       | Admin after the change.                |
 | `changed_by` | `Address` | topic | Topic: address that changed the admin. |
-| `timestamp` | `u64` |  | Ledger timestamp of the change. |
+| `timestamp`  | `u64`     |       | Ledger timestamp of the change.        |
 
-**Emitted by:** *(no live call sites — defined but not currently published)*
+**Emitted by:** _(no live call sites — defined but not currently published)_
 
 ---
 
@@ -434,15 +434,15 @@ Emitted when an admin schedules a cancellation of a raffle that has already sold
 
 Topic: `tikka:cancel_scheduled`
 
-| Field | Type | Flags | Description |
-|-------|------|-------|-------------|
-| `creator` | `Address` |  | Address that created the raffle. |
-| `scheduled_by` | `Address` |  | Admin address that scheduled the cancellation. |
-| `tickets_sold` | `u32` |  | Number of tickets sold when the cancel was scheduled. |
-| `cancel_at` | `u64` |  | Ledger timestamp at which the cancel becomes executable. |
-| `timestamp` | `u64` |  | Ledger timestamp of the schedule. |
+| Field          | Type      | Flags | Description                                              |
+| -------------- | --------- | ----- | -------------------------------------------------------- |
+| `creator`      | `Address` |       | Address that created the raffle.                         |
+| `scheduled_by` | `Address` |       | Admin address that scheduled the cancellation.           |
+| `tickets_sold` | `u32`     |       | Number of tickets sold when the cancel was scheduled.    |
+| `cancel_at`    | `u64`     |       | Ledger timestamp at which the cancel becomes executable. |
+| `timestamp`    | `u64`     |       | Ledger timestamp of the schedule.                        |
 
-**Emitted by:** *(no live call sites — defined but not currently published)*
+**Emitted by:** _(no live call sites — defined but not currently published)_
 
 ---
 
@@ -452,11 +452,11 @@ Emitted when the draw is triggered (usually by the last ticket purchase).
 
 Topic: `tikka:draw_triggered`
 
-| Field | Type | Flags | Description |
-|-------|------|-------|-------------|
-| `caller` | `Address` |  | Address that triggered the draw (usually the last buyer). |
-| `total_tickets_sold` | `u32` |  | Number of tickets sold when the draw was triggered. |
-| `timestamp` | `u64` |  | Ledger timestamp of the trigger. |
+| Field                | Type      | Flags | Description                                               |
+| -------------------- | --------- | ----- | --------------------------------------------------------- |
+| `caller`             | `Address` |       | Address that triggered the draw (usually the last buyer). |
+| `total_tickets_sold` | `u32`     |       | Number of tickets sold when the draw was triggered.       |
+| `timestamp`          | `u64`     |       | Ledger timestamp of the trigger.                          |
 
 **Emitted by:** `buy_tickets`, `buy_tickets_for`, `finalize_raffle`
 
@@ -468,13 +468,13 @@ Emitted when residual dust balances are swept to the treasury.
 
 Topic: `tikka:dust_swept`
 
-| Field | Type | Flags | Description |
-|-------|------|-------|-------------|
-| `swept_by` | `Address` |  | Address that triggered the sweep. |
-| `token` | `Address` |  | Token whose dust balance was swept. |
-| `treasury` | `Address` |  | Address the dust was swept to. |
-| `amount` | `i128` |  | Amount swept. |
-| `timestamp` | `u64` |  | Ledger timestamp of the sweep. |
+| Field       | Type      | Flags | Description                         |
+| ----------- | --------- | ----- | ----------------------------------- |
+| `swept_by`  | `Address` |       | Address that triggered the sweep.   |
+| `token`     | `Address` |       | Token whose dust balance was swept. |
+| `treasury`  | `Address` |       | Address the dust was swept to.      |
+| `amount`    | `i128`    |       | Amount swept.                       |
+| `timestamp` | `u64`     |       | Ledger timestamp of the sweep.      |
 
 **Emitted by:** `sweep_dust`
 
@@ -486,13 +486,13 @@ Emitted when an emergency withdrawal is executed after the delay elapses.
 
 Topic: `tikka:emergency_withdrawn`
 
-| Field | Type | Flags | Description |
-|-------|------|-------|-------------|
-| `withdrawn_by` | `Address` |  | Address that issued the emergency withdrawal. |
-| `to` | `Address` |  | Address the funds were withdrawn to. |
-| `amount` | `i128` |  | Amount withdrawn. |
-| `token` | `Address` |  | Token withdrawn. |
-| `timestamp` | `u64` |  | Ledger timestamp of the withdrawal. |
+| Field          | Type      | Flags | Description                                   |
+| -------------- | --------- | ----- | --------------------------------------------- |
+| `withdrawn_by` | `Address` |       | Address that issued the emergency withdrawal. |
+| `to`           | `Address` |       | Address the funds were withdrawn to.          |
+| `amount`       | `i128`    |       | Amount withdrawn.                             |
+| `token`        | `Address` |       | Token withdrawn.                              |
+| `timestamp`    | `u64`     |       | Ledger timestamp of the withdrawal.           |
 
 **Emitted by:** `emergency_withdraw`
 
@@ -504,14 +504,14 @@ Emitted when the raffle end time is extended.
 
 Topic: `tikka:end_time_extended`
 
-| Field | Type | Flags | Description |
-|-------|------|-------|-------------|
-| `old_end_time` | `u64` |  | End time before the extension. |
-| `new_end_time` | `u64` |  | End time after the extension. |
-| `extended_by` | `Address` |  | Address that extended the end time. |
-| `timestamp` | `u64` |  | Ledger timestamp of the extension. |
+| Field          | Type      | Flags | Description                         |
+| -------------- | --------- | ----- | ----------------------------------- |
+| `old_end_time` | `u64`     |       | End time before the extension.      |
+| `new_end_time` | `u64`     |       | End time after the extension.       |
+| `extended_by`  | `Address` |       | Address that extended the end time. |
+| `timestamp`    | `u64`     |       | Ledger timestamp of the extension.  |
 
-**Emitted by:** *(no live call sites — defined but not currently published)*
+**Emitted by:** _(no live call sites — defined but not currently published)_
 
 ---
 
@@ -521,12 +521,12 @@ Emitted when accumulated protocol fees are withdrawn to the treasury.
 
 Topic: `tikka:fees_withdrawn`
 
-| Field | Type | Flags | Description |
-|-------|------|-------|-------------|
-| `recipient` | `Address` |  | Address the accumulated fees were sent to. |
-| `amount` | `i128` |  | Amount withdrawn. |
-| `token` | `Address` |  | Token the fees were held in. |
-| `timestamp` | `u64` |  | Ledger timestamp of the withdrawal. |
+| Field       | Type      | Flags | Description                                |
+| ----------- | --------- | ----- | ------------------------------------------ |
+| `recipient` | `Address` |       | Address the accumulated fees were sent to. |
+| `amount`    | `i128`    |       | Amount withdrawn.                          |
+| `token`     | `Address` |       | Token the fees were held in.               |
+| `timestamp` | `u64`     |       | Ledger timestamp of the withdrawal.        |
 
 **Emitted by:** `withdraw_fees`
 
@@ -538,14 +538,14 @@ Emitted when the metadata hash backing a raffle's description is updated.
 
 Topic: `tikka:metadata_hash_updated`
 
-| Field | Type | Flags | Description |
-|-------|------|-------|-------------|
-| `old_hash` | `BytesN<32>` |  | Metadata hash before the update. |
-| `new_hash` | `BytesN<32>` |  | Metadata hash after the update. |
-| `updated_by` | `Address` |  | Address that performed the update. |
-| `timestamp` | `u64` |  | Ledger timestamp of the update. |
+| Field        | Type         | Flags | Description                        |
+| ------------ | ------------ | ----- | ---------------------------------- |
+| `old_hash`   | `BytesN<32>` |       | Metadata hash before the update.   |
+| `new_hash`   | `BytesN<32>` |       | Metadata hash after the update.    |
+| `updated_by` | `Address`    |       | Address that performed the update. |
+| `timestamp`  | `u64`        |       | Ledger timestamp of the update.    |
 
-**Emitted by:** *(no live call sites — defined but not currently published)*
+**Emitted by:** _(no live call sites — defined but not currently published)_
 
 ---
 
@@ -555,12 +555,12 @@ Emitted when the configured randomness oracle address is updated.
 
 Topic: `tikka:oracle_address_updated`
 
-| Field | Type | Flags | Description |
-|-------|------|-------|-------------|
-| `old_oracle` | `Option<Address>` |  | Previous oracle address, if one was configured. |
-| `new_oracle` | `Address` |  | New oracle address. |
-| `updated_by` | `Address` |  | Address that performed the update. |
-| `timestamp` | `u64` |  | Ledger timestamp of the update. |
+| Field        | Type              | Flags | Description                                     |
+| ------------ | ----------------- | ----- | ----------------------------------------------- |
+| `old_oracle` | `Option<Address>` |       | Previous oracle address, if one was configured. |
+| `new_oracle` | `Address`         |       | New oracle address.                             |
+| `updated_by` | `Address`         |       | Address that performed the update.              |
+| `timestamp`  | `u64`             |       | Ledger timestamp of the update.                 |
 
 **Emitted by:** `update_oracle_address`
 
@@ -572,14 +572,14 @@ Emitted each time an oracle in the quorum submits its random seed.
 
 Topic: `tikka:oracle_seed_delivered`
 
-| Field | Type | Flags | Description |
-|-------|------|-------|-------------|
-| `oracle` | `Address` |  | Oracle address that submitted its random seed for quorum aggregation. |
-| `seed` | `u64` |  | Seed value delivered by this oracle. |
-| `request_id` | `u64` |  | Correlation ID of the original quorum request. |
-| `current_count` | `u32` |  | Number of distinct seeds collected so far (1-based count). |
-| `threshold` | `u32` |  | Quorum threshold (`k`) required before aggregation happens. |
-| `timestamp` | `u64` |  | Ledger timestamp of the delivery. |
+| Field           | Type      | Flags | Description                                                           |
+| --------------- | --------- | ----- | --------------------------------------------------------------------- |
+| `oracle`        | `Address` |       | Oracle address that submitted its random seed for quorum aggregation. |
+| `seed`          | `u64`     |       | Seed value delivered by this oracle.                                  |
+| `request_id`    | `u64`     |       | Correlation ID of the original quorum request.                        |
+| `current_count` | `u32`     |       | Number of distinct seeds collected so far (1-based count).            |
+| `threshold`     | `u32`     |       | Quorum threshold (`k`) required before aggregation happens.           |
+| `timestamp`     | `u64`     |       | Ledger timestamp of the delivery.                                     |
 
 **Emitted by:** `provide_quorum_randomness`
 
@@ -591,17 +591,20 @@ Emitted when a winner claims their prize.
 
 Topic: `tikka:prize_claimed`
 
-| Field | Type | Flags | Description |
-|-------|------|-------|-------------|
-| `winner` | `Address` |  | Winner address claiming the prize. |
-| `tier_index` | `u32` |  | 0-based prize tier index being claimed (`prizes[i]`). |
-| `payment_token` | `Address` |  | Token the prize is paid in. |
-| `gross_amount` | `i128` |  | Prize amount before platform fee deduction. |
-| `net_amount` | `i128` |  | Amount actually transferred to the winner. |
-| `platform_fee` | `i128` |  | Platform fee withheld from the prize. |
-| `claimed_at` | `u64` |  | Ledger timestamp of the claim. |
+| Field           | Type      | Flags | Description                                           |
+| --------------- | --------- | ----- | ----------------------------------------------------- |
+| `winner`        | `Address` |       | Winner address claiming the prize.                    |
+| `tier_index`    | `u32`     |       | 0-based prize tier index being claimed (`prizes[i]`). |
+| `payment_token` | `Address` |       | Token the prize is paid in.                           |
+| `gross_amount`  | `i128`    |       | Prize amount before platform fee deduction.           |
+| `net_amount`    | `i128`    |       | Amount actually transferred to the winner.            |
+| `platform_fee`  | `i128`    |       | Platform fee withheld from the prize.                 |
+| `claimed_at`    | `u64`     |       | Ledger timestamp of the claim.                        |
 
 **Emitted by:** `claim_prize`
+
+A claimed prize was transferred to the winner. This is distinct from a prize
+that was swept to the treasury after the claim period expired.
 
 ---
 
@@ -611,12 +614,12 @@ Emitted when the prize pool is deposited into the raffle.
 
 Topic: `tikka:prize_deposited`
 
-| Field | Type | Flags | Description |
-|-------|------|-------|-------------|
-| `creator` | `Address` |  | Address that deposited the prize (usually the creator). |
-| `amount` | `i128` |  | Amount deposited. |
-| `token` | `Address` |  | Token the prize is held in. |
-| `timestamp` | `u64` |  | Ledger timestamp of the deposit. |
+| Field       | Type      | Flags | Description                                             |
+| ----------- | --------- | ----- | ------------------------------------------------------- |
+| `creator`   | `Address` |       | Address that deposited the prize (usually the creator). |
+| `amount`    | `i128`    |       | Amount deposited.                                       |
+| `token`     | `Address` |       | Token the prize is held in.                             |
+| `timestamp` | `u64`     |       | Ledger timestamp of the deposit.                        |
 
 **Emitted by:** `deposit_prize`
 
@@ -628,12 +631,12 @@ Emitted when the prize pool is refunded back to the creator.
 
 Topic: `tikka:prize_refunded`
 
-| Field | Type | Flags | Description |
-|-------|------|-------|-------------|
-| `creator` | `Address` |  | Address that received the refund (usually the creator). |
-| `amount` | `i128` |  | Amount refunded. |
-| `token` | `Address` |  | Token the refund was paid in. |
-| `timestamp` | `u64` |  | Ledger timestamp of the refund. |
+| Field       | Type      | Flags | Description                                             |
+| ----------- | --------- | ----- | ------------------------------------------------------- |
+| `creator`   | `Address` |       | Address that received the refund (usually the creator). |
+| `amount`    | `i128`    |       | Amount refunded.                                        |
+| `token`     | `Address` |       | Token the refund was paid in.                           |
+| `timestamp` | `u64`     |       | Ledger timestamp of the refund.                         |
 
 **Emitted by:** `refund_prize`
 
@@ -641,19 +644,22 @@ Topic: `tikka:prize_refunded`
 
 ## PrizeSwept
 
-Emitted once per unclaimed winner when `sweep_unclaimed` runs after `claim_expiry_seconds` has elapsed since finalization.  The prize share is transferred to the raffle's `treasury_address`.
+Emitted once per unclaimed winner when `sweep_unclaimed` runs after `claim_expiry_seconds` has elapsed since finalization. The prize share is transferred to the raffle's `treasury_address`.
 
 Topic: `tikka:prize_swept`
 
-| Field | Type | Flags | Description |
-|-------|------|-------|-------------|
-| `winner` | `Address` |  | Original winner address whose unclaimed prize was swept. |
-| `tier_index` | `u32` |  | Prize tier index (0-based, matches `prizes` array). |
-| `treasury` | `Address` |  | Treasury address that received the swept prize. |
-| `amount` | `i128` |  | Amount transferred to treasury. |
-| `swept_at` | `u64` |  | Ledger timestamp of the sweep. |
+| Field        | Type      | Flags | Description                                              |
+| ------------ | --------- | ----- | -------------------------------------------------------- |
+| `winner`     | `Address` |       | Original winner address whose unclaimed prize was swept. |
+| `tier_index` | `u32`     |       | Prize tier index (0-based, matches `prizes` array).      |
+| `treasury`   | `Address` |       | Treasury address that received the swept prize.          |
+| `amount`     | `i128`    |       | Amount transferred to treasury.                          |
+| `swept_at`   | `u64`     |       | Ledger timestamp of the sweep.                           |
 
 **Emitted by:** `sweep_unclaimed`
+
+A swept prize was transferred to the treasury, not to the winner. The winner
+record is marked `swept`, and a later claim attempt returns `PrizeSwept`.
 
 ---
 
@@ -663,12 +669,12 @@ Emitted when the protocol fee (basis points) is updated.
 
 Topic: `tikka:protocol_fee_updated`
 
-| Field | Type | Flags | Description |
-|-------|------|-------|-------------|
-| `old_fee_bp` | `u32` |  | Protocol fee (basis points) before the update. |
-| `new_fee_bp` | `u32` |  | Protocol fee (basis points) after the update. |
-| `updated_by` | `Address` |  | Address that performed the update. |
-| `timestamp` | `u64` |  | Ledger timestamp of the update. |
+| Field        | Type      | Flags | Description                                    |
+| ------------ | --------- | ----- | ---------------------------------------------- |
+| `old_fee_bp` | `u32`     |       | Protocol fee (basis points) before the update. |
+| `new_fee_bp` | `u32`     |       | Protocol fee (basis points) after the update.  |
+| `updated_by` | `Address` |       | Address that performed the update.             |
+| `timestamp`  | `u64`     |       | Ledger timestamp of the update.                |
 
 **Emitted by:** `set_protocol_fee_bp`
 
@@ -699,20 +705,20 @@ Emitted when a new raffle instance is created with its initial configuration.
 
 Topic: `tikka:raffle_created`
 
-| Field | Type | Flags | Description |
-|-------|------|-------|-------------|
-| `raffle_id` | `Address` |  | Instance contract address of the new raffle. |
-| `creator` | `Address` |  | Address that created the raffle. |
-| `end_time` | `u64` |  | Ledger timestamp at which the raffle is scheduled to close. |
-| `max_tickets` | `u32` |  | Total number of tickets that can ever be sold (1-based ticket IDs run `1..=max_tickets`). |
-| `ticket_price` | `i128` |  | Nominal price (in `payment_token`) of a single ticket. |
-| `payment_token` | `Address` |  | Token in which tickets are paid for. |
-| `prize_amount` | `i128` |  | Total prize pool deposited into the raffle. |
-| `prizes` | `Vec<u32>` |  | Prize tier weights (basis points), 0-based supported levels. |
-| `description` | `String` |  | Free-text description set by the creator. |
-| `randomness_source` | `RandomnessSource` |  | Entry point that will drive the draw randomness. |
-| `metadata_hash` | `BytesN<32>` | topic | Topic: SHA-256 of the metadata the description resolves to. |
-| `unique_winners` | `bool` |  | Whether each address may win at most once. |
+| Field               | Type               | Flags | Description                                                                               |
+| ------------------- | ------------------ | ----- | ----------------------------------------------------------------------------------------- |
+| `raffle_id`         | `Address`          |       | Instance contract address of the new raffle.                                              |
+| `creator`           | `Address`          |       | Address that created the raffle.                                                          |
+| `end_time`          | `u64`              |       | Ledger timestamp at which the raffle is scheduled to close.                               |
+| `max_tickets`       | `u32`              |       | Total number of tickets that can ever be sold (1-based ticket IDs run `1..=max_tickets`). |
+| `ticket_price`      | `i128`             |       | Nominal price (in `payment_token`) of a single ticket.                                    |
+| `payment_token`     | `Address`          |       | Token in which tickets are paid for.                                                      |
+| `prize_amount`      | `i128`             |       | Total prize pool deposited into the raffle.                                               |
+| `prizes`            | `Vec<u32>`         |       | Prize tier weights (basis points), 0-based supported levels.                              |
+| `description`       | `String`           |       | Free-text description set by the creator.                                                 |
+| `randomness_source` | `RandomnessSource` |       | Entry point that will drive the draw randomness.                                          |
+| `metadata_hash`     | `BytesN<32>`       | topic | Topic: SHA-256 of the metadata the description resolves to.                               |
+| `unique_winners`    | `bool`             |       | Whether each address may win at most once.                                                |
 
 **Emitted by:** `init`
 
@@ -724,12 +730,12 @@ Emitted when the raffle fails during its lifecycle and is wound down.
 
 Topic: `tikka:raffle_failed`
 
-| Field | Type | Flags | Description |
-|-------|------|-------|-------------|
-| `creator` | `Address` |  | Address that created the raffle. |
-| `reason` | `FailureReason` |  | Machine-readable failure reason. |
-| `tickets_sold` | `u32` |  | Number of tickets sold before the failure. |
-| `timestamp` | `u64` |  | Ledger timestamp of the failure. |
+| Field          | Type            | Flags | Description                                |
+| -------------- | --------------- | ----- | ------------------------------------------ |
+| `creator`      | `Address`       |       | Address that created the raffle.           |
+| `reason`       | `FailureReason` |       | Machine-readable failure reason.           |
+| `tickets_sold` | `u32`           |       | Number of tickets sold before the failure. |
+| `timestamp`    | `u64`           |       | Ledger timestamp of the failure.           |
 
 **Emitted by:** `finalize_raffle`
 
@@ -741,16 +747,16 @@ Emitted when the raffle draw completes and winners are recorded.
 
 Topic: `tikka:raffle_finalized`
 
-| Field | Type | Flags | Description |
-|-------|------|-------|-------------|
-| `raffle_id` | `Address` |  | Instance contract address of the finalized raffle. |
-| `winners` | `Vec<Address>` |  | Winner addresses; parallel to `winning_ticket_ids`. |
-| `winning_ticket_ids` | `Vec<u32>` |  | 0-based winning positions within the ticket pool (1-based ticket IDs are `winning_ticket_ids[i] + 1`); parallel to `winners`.  These are **positions**, not ticket IDs. |
-| `total_tickets_sold` | `u32` |  | Number of tickets that were sold for the raffle. |
-| `randomness_source` | `RandomnessSource` |  | Randomness source that produced `randomness_type`. |
-| `randomness_type` | `RandomnessType` |  | Concrete randomness mode used for this draw. |
-| `finalized_at` | `u64` |  | Ledger timestamp of finalization. |
-| `unique_winners` | `bool` |  | Whether unique-winner selection was applied. |
+| Field                | Type               | Flags | Description                                                                                                                                                            |
+| -------------------- | ------------------ | ----- | ---------------------------------------------------------------------------------------------------------------------------------------------------------------------- |
+| `raffle_id`          | `Address`          |       | Instance contract address of the finalized raffle.                                                                                                                     |
+| `winners`            | `Vec<Address>`     |       | Winner addresses; parallel to `winning_ticket_ids`.                                                                                                                    |
+| `winning_ticket_ids` | `Vec<u32>`         |       | 0-based winning positions within the ticket pool (1-based ticket IDs are `winning_ticket_ids[i] + 1`); parallel to `winners`. These are **positions**, not ticket IDs. |
+| `total_tickets_sold` | `u32`              |       | Number of tickets that were sold for the raffle.                                                                                                                       |
+| `randomness_source`  | `RandomnessSource` |       | Randomness source that produced `randomness_type`.                                                                                                                     |
+| `randomness_type`    | `RandomnessType`   |       | Concrete randomness mode used for this draw.                                                                                                                           |
+| `finalized_at`       | `u64`              |       | Ledger timestamp of finalization.                                                                                                                                      |
+| `unique_winners`     | `bool`             |       | Whether unique-winner selection was applied.                                                                                                                           |
 
 **Emitted by:** `do_finalize_with_seed`
 
@@ -762,11 +768,11 @@ Emitted on every raffle status transition.
 
 Topic: `tikka:raffle_status_changed`
 
-| Field | Type | Flags | Description |
-|-------|------|-------|-------------|
-| `old_status` | `raffle_shared::RaffleStatus` |  | Status before the transition. |
-| `new_status` | `raffle_shared::RaffleStatus` |  | Status after the transition. |
-| `timestamp` | `u64` |  | Ledger timestamp of the transition. |
+| Field        | Type                          | Flags | Description                         |
+| ------------ | ----------------------------- | ----- | ----------------------------------- |
+| `old_status` | `raffle_shared::RaffleStatus` |       | Status before the transition.       |
+| `new_status` | `raffle_shared::RaffleStatus` |       | Status after the transition.        |
+| `timestamp`  | `u64`                         |       | Ledger timestamp of the transition. |
 
 **Emitted by:** `transition_status`
 
@@ -778,13 +784,13 @@ Emitted when the randomness fallback path is used to finalize a draw.
 
 Topic: `tikka:randomness_fallback_triggered`
 
-| Field | Type | Flags | Description |
-|-------|------|-------|-------------|
-| `triggered_by` | `Address` |  | Address that triggered the fallback. |
-| `seed_used` | `u64` |  | Seed value used to finalize the draw. |
-| `request_ledger` | `u32` |  | Ledger sequence at which randomness was originally requested. |
-| `fallback_ledger` | `u32` |  | Ledger sequence at which the fallback fired. |
-| `timestamp` | `u64` |  | Ledger timestamp of the fallback. |
+| Field             | Type      | Flags | Description                                                   |
+| ----------------- | --------- | ----- | ------------------------------------------------------------- |
+| `triggered_by`    | `Address` |       | Address that triggered the fallback.                          |
+| `seed_used`       | `u64`     |       | Seed value used to finalize the draw.                         |
+| `request_ledger`  | `u32`     |       | Ledger sequence at which randomness was originally requested. |
+| `fallback_ledger` | `u32`     |       | Ledger sequence at which the fallback fired.                  |
+| `timestamp`       | `u64`     |       | Ledger timestamp of the fallback.                             |
 
 **Emitted by:** `trigger_randomness_fallback`
 
@@ -796,12 +802,12 @@ Emitted when the oracle delivers a seed for the draw.
 
 Topic: `tikka:randomness_received`
 
-| Field | Type | Flags | Description |
-|-------|------|-------|-------------|
-| `oracle` | `Address` |  | Oracle address that delivered the seed. |
-| `seed` | `u64` |  | Raw seed value returned by the oracle. |
-| `request_id` | `u64` |  | Correlation ID of the original request. |
-| `timestamp` | `u64` |  | Ledger timestamp of the delivery. |
+| Field        | Type      | Flags | Description                             |
+| ------------ | --------- | ----- | --------------------------------------- |
+| `oracle`     | `Address` |       | Oracle address that delivered the seed. |
+| `seed`       | `u64`     |       | Raw seed value returned by the oracle.  |
+| `request_id` | `u64`     |       | Correlation ID of the original request. |
+| `timestamp`  | `u64`     |       | Ledger timestamp of the delivery.       |
 
 **Emitted by:** `provide_randomness`
 
@@ -813,11 +819,11 @@ Emitted when a randomness request is sent to the configured oracle.
 
 Topic: `tikka:randomness_requested`
 
-| Field | Type | Flags | Description |
-|-------|------|-------|-------------|
-| `oracle` | `Address` |  | Oracle address the request was sent to. |
-| `request_id` | `u64` |  | Correlation ID used to match the later delivery. |
-| `timestamp` | `u64` |  | Ledger timestamp of the request. |
+| Field        | Type      | Flags | Description                                      |
+| ------------ | --------- | ----- | ------------------------------------------------ |
+| `oracle`     | `Address` |       | Oracle address the request was sent to.          |
+| `request_id` | `u64`     |       | Correlation ID used to match the later delivery. |
+| `timestamp`  | `u64`     |       | Ledger timestamp of the request.                 |
 
 **Emitted by:** `buy_tickets`, `buy_tickets_for`, `finalize_raffle`
 
@@ -829,10 +835,10 @@ Emitted when all contract storage for the raffle is wiped.
 
 Topic: `tikka:storage_wiped`
 
-| Field | Type | Flags | Description |
-|-------|------|-------|-------------|
-| `wiped_by` | `Address` |  | Address that wiped the storage. |
-| `timestamp` | `u64` |  | Ledger timestamp of the wipe. |
+| Field       | Type      | Flags | Description                     |
+| ----------- | --------- | ----- | ------------------------------- |
+| `wiped_by`  | `Address` |       | Address that wiped the storage. |
+| `timestamp` | `u64`     |       | Ledger timestamp of the wipe.   |
 
 **Emitted by:** `wipe_storage`
 
@@ -844,12 +850,12 @@ Emitted when the swap deadline (seconds) is updated.
 
 Topic: `tikka:swap_deadline_updated`
 
-| Field | Type | Flags | Description |
-|-------|------|-------|-------------|
-| `old_deadline_seconds` | `u64` |  | Swap deadline (seconds) before the update. |
-| `new_deadline_seconds` | `u64` |  | Swap deadline (seconds) after the update. |
-| `updated_by` | `Address` |  | Address that performed the update. |
-| `timestamp` | `u64` |  | Ledger timestamp of the update. |
+| Field                  | Type      | Flags | Description                                |
+| ---------------------- | --------- | ----- | ------------------------------------------ |
+| `old_deadline_seconds` | `u64`     |       | Swap deadline (seconds) before the update. |
+| `new_deadline_seconds` | `u64`     |       | Swap deadline (seconds) after the update.  |
+| `updated_by`           | `Address` |       | Address that performed the update.         |
+| `timestamp`            | `u64`     |       | Ledger timestamp of the update.            |
 
 **Emitted by:** `set_swap_deadline`
 
@@ -883,15 +889,15 @@ Emitted once per NFT receipt is successfully minted by the configured `nft_contr
 
 Topic: `tikka:ticket_nft_minted`
 
-| Field | Type | Flags | Description |
-|-------|------|-------|-------------|
-| `recipient` | `Address` |  | The address that received the NFT (the ticket buyer). |
-| `ticket_id` | `u32` |  | The ticket ID within this raffle (1-indexed). |
-| `raffle_id` | `Address` |  | The raffle instance contract address (NFT namespace). |
-| `nft_contract` | `Address` |  | The NFT contract that performed the mint. |
-| `timestamp` | `u64` |  | Ledger timestamp of the mint. |
+| Field          | Type      | Flags | Description                                           |
+| -------------- | --------- | ----- | ----------------------------------------------------- |
+| `recipient`    | `Address` |       | The address that received the NFT (the ticket buyer). |
+| `ticket_id`    | `u32`     |       | The ticket ID within this raffle (1-indexed).         |
+| `raffle_id`    | `Address` |       | The raffle instance contract address (NFT namespace). |
+| `nft_contract` | `Address` |       | The NFT contract that performed the mint.             |
+| `timestamp`    | `u64`     |       | Ledger timestamp of the mint.                         |
 
-**Emitted by:** *(no live call sites — defined but not currently published)*
+**Emitted by:** _(no live call sites — defined but not currently published)_
 
 ---
 
@@ -922,12 +928,12 @@ Emitted when a ticket is refunded (only applies to refundable ticket states).
 
 Topic: `tikka:ticket_refunded`
 
-| Field | Type | Flags | Description |
-|-------|------|-------|-------------|
-| `buyer` | `Address` |  | Address that was refunded (the ticket owner at refund time). |
-| `ticket_number` | `u32` |  | 1-based ticket ID that was refunded. |
-| `amount` | `i128` |  | Amount refunded, denominated in the payment token. |
-| `timestamp` | `u64` |  | Ledger timestamp of the refund. |
+| Field           | Type      | Flags | Description                                                  |
+| --------------- | --------- | ----- | ------------------------------------------------------------ |
+| `buyer`         | `Address` |       | Address that was refunded (the ticket owner at refund time). |
+| `ticket_number` | `u32`     |       | 1-based ticket ID that was refunded.                         |
+| `amount`        | `i128`    |       | Amount refunded, denominated in the payment token.           |
+| `timestamp`     | `u64`     |       | Ledger timestamp of the refund.                              |
 
 **Emitted by:** `refund_ticket`
 
@@ -939,10 +945,10 @@ Emitted when ticket sales are paused for the raffle.
 
 Topic: `tikka:ticket_sales_paused`
 
-| Field | Type | Flags | Description |
-|-------|------|-------|-------------|
-| `paused_by` | `Address` |  | Address that paused sales. |
-| `timestamp` | `u64` |  | Ledger timestamp of the pause. |
+| Field       | Type      | Flags | Description                    |
+| ----------- | --------- | ----- | ------------------------------ |
+| `paused_by` | `Address` |       | Address that paused sales.     |
+| `timestamp` | `u64`     |       | Ledger timestamp of the pause. |
 
 **Emitted by:** `pause_ticket_sales`
 
@@ -954,10 +960,10 @@ Emitted when ticket sales are resumed for the raffle.
 
 Topic: `tikka:ticket_sales_resumed`
 
-| Field | Type | Flags | Description |
-|-------|------|-------|-------------|
-| `resumed_by` | `Address` |  | Address that resumed sales. |
-| `timestamp` | `u64` |  | Ledger timestamp of the resume. |
+| Field        | Type      | Flags | Description                     |
+| ------------ | --------- | ----- | ------------------------------- |
+| `resumed_by` | `Address` |       | Address that resumed sales.     |
+| `timestamp`  | `u64`     |       | Ledger timestamp of the resume. |
 
 **Emitted by:** `resume_ticket_sales`
 
@@ -965,18 +971,18 @@ Topic: `tikka:ticket_sales_resumed`
 
 ## TicketTransferred
 
-Emitted when a ticket changes ownership.  Note: this event is `#[allow(dead_code)]` in the current implementation.
+Emitted when a ticket changes ownership. Note: this event is `#[allow(dead_code)]` in the current implementation.
 
 Topic: `tikka:ticket_transferred`
 
-| Field | Type | Flags | Description |
-|-------|------|-------|-------------|
-| `ticket_id` | `u32` |  | 1-based ticket ID transferred. |
-| `from` | `Address` |  | Previous owner. |
-| `to` | `Address` |  | New owner. |
-| `timestamp` | `u64` |  | Ledger timestamp of the transfer. |
+| Field       | Type      | Flags | Description                       |
+| ----------- | --------- | ----- | --------------------------------- |
+| `ticket_id` | `u32`     |       | 1-based ticket ID transferred.    |
+| `from`      | `Address` |       | Previous owner.                   |
+| `to`        | `Address` |       | New owner.                        |
+| `timestamp` | `u64`     |       | Ledger timestamp of the transfer. |
 
-**Emitted by:** *(no live call sites — defined but not currently published)*
+**Emitted by:** _(no live call sites — defined but not currently published)_
 
 ---
 
@@ -986,13 +992,13 @@ Emitted when tokens are rescued out of the raffle contract.
 
 Topic: `tikka:tokens_rescued`
 
-| Field | Type | Flags | Description |
-|-------|------|-------|-------------|
-| `rescued_by` | `Address` |  | Address that rescued the tokens. |
-| `token` | `Address` |  | Token that was rescued. |
-| `recipient` | `Address` |  | Address the rescued funds were sent to. |
-| `amount` | `i128` |  | Amount rescued. |
-| `timestamp` | `u64` |  | Ledger timestamp of the rescue. |
+| Field        | Type      | Flags | Description                             |
+| ------------ | --------- | ----- | --------------------------------------- |
+| `rescued_by` | `Address` |       | Address that rescued the tokens.        |
+| `token`      | `Address` |       | Token that was rescued.                 |
+| `recipient`  | `Address` |       | Address the rescued funds were sent to. |
+| `amount`     | `i128`    |       | Amount rescued.                         |
+| `timestamp`  | `u64`     |       | Ledger timestamp of the rescue.         |
 
 **Emitted by:** `rescue_tokens`
 
@@ -1004,12 +1010,12 @@ Emitted once per winner selected during the draw.
 
 Topic: `tikka:winner_drawn`
 
-| Field | Type | Flags | Description |
-|-------|------|-------|-------------|
-| `winner` | `Address` |  | Winner address for this prize tier. |
-| `ticket_id` | `u32` |  | 1-based ticket ID of the winning ticket (pool position + 1). |
-| `tier_index` | `u32` |  | 0-based prize tier index this win corresponds to (`prizes[i]`). |
-| `timestamp` | `u64` |  | Ledger timestamp of the draw. |
+| Field        | Type      | Flags | Description                                                     |
+| ------------ | --------- | ----- | --------------------------------------------------------------- |
+| `winner`     | `Address` |       | Winner address for this prize tier.                             |
+| `ticket_id`  | `u32`     |       | 1-based ticket ID of the winning ticket (pool position + 1).    |
+| `tier_index` | `u32`     |       | 0-based prize tier index this win corresponds to (`prizes[i]`). |
+| `timestamp`  | `u64`     |       | Ledger timestamp of the draw.                                   |
 
 **Emitted by:** `do_finalize_with_seed`
 
@@ -1025,10 +1031,10 @@ Emitted when either the factory or an instance contract is paused.
 
 Topic: `tikka:contract_paused`
 
-| Field | Type | Flags | Description |
-|-------|------|-------|-------------|
-| `paused_by` | `Address` |  | Address that paused the contract. |
-| `timestamp` | `u64` |  | Ledger timestamp of the pause. |
+| Field       | Type      | Flags | Description                       |
+| ----------- | --------- | ----- | --------------------------------- |
+| `paused_by` | `Address` |       | Address that paused the contract. |
+| `timestamp` | `u64`     |       | Ledger timestamp of the pause.    |
 
 **Emitted by:** `pause`, `pause_factory`
 
@@ -1040,10 +1046,10 @@ Emitted when either the factory or an instance contract is unpaused.
 
 Topic: `tikka:contract_unpaused`
 
-| Field | Type | Flags | Description |
-|-------|------|-------|-------------|
-| `unpaused_by` | `Address` |  | Address that unpaused the contract. |
-| `timestamp` | `u64` |  | Ledger timestamp of the resume. |
+| Field         | Type      | Flags | Description                         |
+| ------------- | --------- | ----- | ----------------------------------- |
+| `unpaused_by` | `Address` |       | Address that unpaused the contract. |
+| `timestamp`   | `u64`     |       | Ledger timestamp of the resume.     |
 
 **Emitted by:** `unpause`, `unpause_factory`
 

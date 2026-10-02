@@ -33,6 +33,9 @@ pub(crate) fn claim_prize(env: Env, winner: Address, tier_index: u32) -> Result<
     if entry.claimed {
         return Err(Error::PrizeAlreadyClaimed);
     }
+    if entry.swept {
+        return Err(Error::PrizeSwept);
+    }
 
     let amount = calculate_tier_prize(&raffle, tier_index)?;
     if amount <= 0 {
@@ -57,6 +60,7 @@ pub(crate) fn claim_prize(env: Env, winner: Address, tier_index: u32) -> Result<
         tier_index,
         Winner {
             claimed: true,
+            swept: false,
             ..entry
         },
     );
@@ -107,9 +111,8 @@ pub(crate) fn claim_prize(env: Env, winner: Address, tier_index: u32) -> Result<
 }
 
 /// Permissionless sweep of unclaimed prizes to treasury after `claim_expiry_seconds`
-/// has elapsed since finalization.  Marks each swept winner as claimed and emits
-/// a `PrizeSwept` event per winner.  Transitions raffle to `Claimed` when all
-/// prizes are accounted for (claimed + swept).
+/// has elapsed since finalization. Marks each swept winner as swept, not claimed,
+/// and emits a `PrizeSwept` event per winner.
 pub(crate) fn sweep_unclaimed(
     env: Env,
     start_index: u32,
@@ -149,7 +152,7 @@ pub(crate) fn sweep_unclaimed(
 
     for i in start_index..end_index {
         let entry = raffle.winners.get(i).ok_or(Error::InvalidIndex)?;
-        if entry.claimed {
+        if entry.claimed || entry.swept {
             continue;
         }
         let amount = calculate_tier_prize(&raffle, i)?;
@@ -162,7 +165,7 @@ pub(crate) fn sweep_unclaimed(
         raffle.winners.set(
             i,
             Winner {
-                claimed: true,
+                swept: true,
                 ..entry.clone()
             },
         );

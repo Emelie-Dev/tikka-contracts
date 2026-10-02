@@ -167,6 +167,7 @@ pub struct Raffle {
 pub struct Winner {
     pub address: Address,
     pub claimed: bool,
+    pub swept: bool,
 }
 
 #[contracttype]

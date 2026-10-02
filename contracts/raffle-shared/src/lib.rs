@@ -287,6 +287,8 @@ pub struct RaffleStats {
     pub prize_funded: bool,
     pub status: RaffleStatus,
     pub time_remaining: u64,
+    pub claimed_prizes: u32,
+    pub swept_prizes: u32,
 }
 
 #[derive(Clone, Debug, PartialEq, Eq)]
@@ -366,8 +368,10 @@ impl Ticket {
 pub struct Winner {
     /// Address that owns the winning ticket at draw time.
     pub address: Address,
-    /// True once this tier's prize has been paid out or swept.
+    /// True once this tier's prize has been paid to the winner.
     pub claimed: bool,
+    /// True once this tier's unpaid prize has been swept to the treasury.
+    pub swept: bool,
     /// Index into `Raffle::prizes` identifying the tier won.
     pub tier_index: u32,
 }
