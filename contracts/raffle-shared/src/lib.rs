@@ -11,6 +11,11 @@ pub use math::{apply_bp, split_bp, BP_DENOMINATOR};
 
 pub use config_builder::{ConfigValidationError, RaffleConfigBuilder};
 
+/// Apply a basis-point rate using floor division, returning `None` on overflow.
+pub fn apply_bp(amount: i128, bp: u32) -> Option<i128> {
+    amount.checked_mul(bp as i128).map(|value| value / 10_000)
+}
+
 #[cfg(test)]
 mod nft_mint_test;
 use soroban_sdk::{contracttype, Address, BytesN, String, Vec};
@@ -220,6 +225,8 @@ pub struct RaffleConfig {
     pub randomness_source: RandomnessSource,
     /// Optional oracle contract address for external randomness flows.
     pub oracle_address: Option<Address>,
+    /// Protocol fee in basis points (100 = 1%), applied to ticket purchases
+    /// and prize claims. See docs/FEE_MODEL.md for the fee model.
     /// Ed25519 public key (32 bytes) belonging to the registered oracle.
     ///
     /// Required when `randomness_source == External`.  The raffle-instance

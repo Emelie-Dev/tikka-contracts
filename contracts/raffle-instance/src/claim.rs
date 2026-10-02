@@ -1,3 +1,4 @@
+use raffle_shared::apply_bp;
 use raffle_shared::constants::MAX_SWEEP_UNCLAIMED_PER_CALL;
 use raffle_shared::math::split_bp;
 use soroban_sdk::{token, Address, Env};
@@ -38,6 +39,12 @@ pub(crate) fn claim_prize(env: Env, winner: Address, tier_index: u32) -> Result<
         return Err(Error::ZeroPrize);
     }
 
+    let protocol_fee = apply_bp(amount, raffle.protocol_fee_bp)
+        .ok_or(Error::ArithmeticOverflow)?;
+
+    let net_amount = amount
+        .checked_sub(protocol_fee)
+        .ok_or(Error::ArithmeticOverflow)?;
     let (protocol_fee, net_amount) =
         split_bp(amount, raffle.protocol_fee_bp).map_err(|_| Error::ArithmeticOverflow)?;
     let tc = token::Client::new(&env, &raffle.prize_token);

@@ -39,7 +39,7 @@ use soroban_sdk::{
     token, Address, BytesN, Env, IntoVal, Symbol, Val, Vec,
 };
 
-use raffle_shared::{RandomnessSource, Ticket};
+use raffle_shared::{apply_bp, RandomnessSource, Ticket};
 
 use crate::events::{DrawTriggered, RandomnessRequested, TicketPurchased};
 use crate::helpers::{
@@ -101,16 +101,17 @@ fn validate_purchase_preconditions(env: &Env, raffle: &Raffle, quantity: u32) ->
 /// 7. Performs a double-read concurrency guard (snapshot vs. persisted state).
 /// 8. Writes each [`Ticket`] to persistent storage under
 ///    [`DataKey::Ticket(id)`](crate::DataKey::Ticket).
-/// 9. Charges `ticket_price * quantity` from the buyer via
-///    `try_transfer`; deducts `protocol_fee` to the treasury.
+/// 9. Charges `ticket_price * quantity` and the protocol fee from the
+///    buyer; the fee accrues for withdrawal after finalization.
 /// 10. If the purchase fills the raffle, calls [`transition_to_drawing`] and
 ///     (for `External` mode) [`request_randomness`].
 /// 11. Reports volume to the factory via a cross-contract `record_volume` call.
 ///
 /// ## Protocol fee
 ///
-/// The fee is collected at purchase time only. Prize-claim fee accounting is
-/// not implemented. Formula: `floor(total_price × protocol_fee_bp / 10 000)`.
+/// The fee is collected at purchase time and held in `AccumulatedFees` for
+/// withdrawal after finalization. Formula: `floor(total_price ×
+/// protocol_fee_bp / 10 000)`.
 ///
 /// # Auth
 ///
@@ -225,7 +226,7 @@ pub(crate) fn buy_tickets(env: Env, buyer: Address, quantity: u32) -> Result<u32
         .map_err(|_| Error::TokenTransferFailed)?
         .map_err(|_| Error::TokenTransferFailed)?;
 
-    //  5. Transfer protocol fee to treasury
+    //  5. Accrue protocol fees for withdrawal after finalization.
     if protocol_fee > 0 {
         if let Some(treasury) = &raffle.treasury_address {
             token_client.transfer(&contract_address, treasury, &protocol_fee);
@@ -456,6 +457,18 @@ pub(crate) fn buy_tickets_for(env: Env, buyer: Address, recipient: Address, quan
     }
 
     let timestamp = env.ledger().timestamp();
+        fix/security-checks-effects-763
+    let ticket_total = raffle
+        .ticket_price
+        .checked_mul(quantity as i128)
+        .ok_or(Error::ArithmeticOverflow)?;
+    let protocol_fee = apply_bp(ticket_total, raffle.protocol_fee_bp)
+        .ok_or(Error::ArithmeticOverflow)?;
+
+    let total_price = ticket_total
+        .checked_add(protocol_fee)
+        .ok_or(Error::ArithmeticOverflow)?;
+        master
     let quote = calculate_buy_quote(&raffle, quantity)?;
     let total_price = quote.net_to_pay;
     let protocol_fee = quote.fee;
@@ -488,7 +501,7 @@ pub(crate) fn buy_tickets_for(env: Env, buyer: Address, recipient: Address, quan
         .map_err(|_| Error::TokenTransferFailed)?
         .map_err(|_| Error::TokenTransferFailed)?;
 
-    //  5. Transfer protocol fee to treasury
+    //  5. Accrue protocol fees for withdrawal after finalization.
     if protocol_fee > 0 {
         if let Some(treasury) = &raffle.treasury_address {
             token_client.transfer(&contract_address, treasury, &protocol_fee);

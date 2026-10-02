@@ -45,7 +45,7 @@ Every script under `scripts/` loads `.env` when present (`export $(cat .env | xa
 
 | Variable                               | Required by                | Purpose                                        |
 | -------------------------------------- | -------------------------- | ---------------------------------------------- |
-| `DEPLOYER_SECRET_KEY`                  | `deploy-*.sh`, `invoke.sh` | Account that signs deploy/invoke txs (`S...`)  |
+| `DEPLOYER_SECRET_KEY`                  | first use of `deploy-*.sh` or `invoke.sh` | Imported once into the Stellar CLI `deployer` identity |
 | `RAFFLE_CONTRACT_ADDRESS`              | `invoke.sh`, `verify.sh`   | Contract ID to invoke or verify (`C...`)       |
 | `STELLAR_NETWORK`                      | `invoke.sh`, `verify.sh`   | Network name (`testnet` default, or `mainnet`) |
 | `STELLAR_RPC_URL`                      | oracle / manual CLI        | Soroban RPC endpoint                           |
@@ -57,7 +57,7 @@ Every script under `scripts/` loads `.env` when present (`export $(cat .env | xa
 | `PROTOCOL_FEE_BP`                      | `deploy-*.sh`              | Protocol fee in basis points; defaults to `0`  |
 | `ALLOW_REDEPLOY`                       | `deploy-*.sh`              | Set to `1` to replace a recorded deployment    |
 
-> **Security:** Never commit `.env` or secret keys. `DEPLOYER_SECRET_KEY` and `ORACLE_SECRET_KEY` must stay local or in a secrets manager.
+> **Security:** Never commit `.env` or secret keys. `DEPLOYER_SECRET_KEY` is read once from `.env` or a secrets manager when the `deployer` identity is first configured. The scripts pipe it to `stellar keys add` and use only the identity name in CLI arguments. `ORACLE_SECRET_KEY` must also stay local or in a secrets manager.
 
 ---
 
@@ -99,13 +99,13 @@ The script:
 
 There is no manual step between deploy and usable.
 
-**Required env:** `DEPLOYER_SECRET_KEY`, `ADMIN_ADDRESS`
+**Required env:** `ADMIN_ADDRESS`; `DEPLOYER_SECRET_KEY` only when first configuring the local `deployer` identity
 **Optional env:** `TREASURY_ADDRESS` (defaults to `ADMIN_ADDRESS`), `PROTOCOL_FEE_BP` (defaults to `0`), `ALLOW_REDEPLOY`
 
 **Example:**
 
 ```bash
-export DEPLOYER_SECRET_KEY="S..."
+# Set DEPLOYER_SECRET_KEY in the untracked .env file or a secrets manager.
 export ADMIN_ADDRESS="G..."
 export PROTOCOL_FEE_BP=250
 ./scripts/deploy-testnet.sh
@@ -125,10 +125,14 @@ orphaning the first. Pass `ALLOW_REDEPLOY=1` when replacing it is what you want.
 **Safety:** Prints the admin, treasury and protocol fee, then prompts
 `Proceed? (y/N)` and aborts unless you confirm with `y` / `yes`.
 
+The script uses the existing local `deployer` identity. On first use, set
+`DEPLOYER_SECRET_KEY` in `.env` or a secrets manager; it is consumed once to
+configure that identity and is not placed in a process argument.
+
 **Example:**
 
 ```bash
-export DEPLOYER_SECRET_KEY="S..."
+# Set DEPLOYER_SECRET_KEY in the untracked .env file or a secrets manager.
 export ADMIN_ADDRESS="G..."
 ./scripts/deploy-mainnet.sh
 # type y when prompted
@@ -170,7 +174,7 @@ SHA-256
 
 **Purpose:** Thin wrapper around `stellar contract invoke` for the contract in `RAFFLE_CONTRACT_ADDRESS`.
 
-**Required env:** `RAFFLE_CONTRACT_ADDRESS`, `DEPLOYER_SECRET_KEY`  
+**Required env:** `RAFFLE_CONTRACT_ADDRESS`; `DEPLOYER_SECRET_KEY` only when first configuring the local `deployer` identity
 **Optional env:** `STELLAR_NETWORK` (default `testnet`)
 
 **Usage:**
@@ -183,7 +187,7 @@ SHA-256
 
 ```bash
 export RAFFLE_CONTRACT_ADDRESS="C..."
-export DEPLOYER_SECRET_KEY="S..."
+# Set DEPLOYER_SECRET_KEY in the untracked .env file or a secrets manager.
 ./scripts/invoke.sh get_raffle
 ```
 

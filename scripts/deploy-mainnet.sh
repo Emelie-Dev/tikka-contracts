@@ -13,7 +13,7 @@ source "${SCRIPT_DIR}/common.sh"
 NETWORK="mainnet"
 
 load_env
-require_env DEPLOYER_SECRET_KEY "the account that signs the deployment"
+require_identity deployer
 require_env ADMIN_ADDRESS "factory admin, passed to init_factory"
 
 TREASURY_ADDRESS="${TREASURY_ADDRESS:-${ADMIN_ADDRESS}}"
@@ -37,7 +37,7 @@ build_contracts
 
 deploy_and_init_factory \
   "${NETWORK}" \
-  "${DEPLOYER_SECRET_KEY}" \
+  deployer \
   "${ADMIN_ADDRESS}" \
   "${TREASURY_ADDRESS}" \
   "${PROTOCOL_FEE_BP}"

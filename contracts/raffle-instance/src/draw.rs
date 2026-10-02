@@ -328,7 +328,7 @@ pub(crate) fn provide_randomness(
 pub(crate) fn trigger_randomness_fallback(
     env: Env,
     caller: Address,
-    do_refund: bool,
+    do_cancel: bool,
 ) -> Result<(), Error> {
     // NOTE: the drawing lock is intentionally *not* checked here. It is set
     // whenever a randomness request is in flight, which is exactly the state
@@ -367,7 +367,7 @@ pub(crate) fn trigger_randomness_fallback(
         return Err(Error::FallbackTooEarly);
     }
 
-    if do_refund {
+    if do_cancel {
         transition_status(
             &env,
             &mut raffle,
@@ -389,7 +389,7 @@ pub(crate) fn trigger_randomness_fallback(
             creator: raffle.creator.clone(),
             reason: CancelReason::OracleTimeout,
             tickets_sold: raffle.tickets_sold,
-            prize_refunded: raffle.prize_deposited,
+            prize_refunded: false,
             timestamp: env.ledger().timestamp(),
         }
         .publish(&env);
