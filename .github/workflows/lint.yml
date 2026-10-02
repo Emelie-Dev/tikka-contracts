@@ -36,7 +36,7 @@ jobs:
         run: |
           bash <(curl -s --retry 3 https://raw.githubusercontent.com/rhysd/actionlint/main/scripts/download-actionlint.bash) latest
           ./actionlint -color .github/workflows/*.yml
-      
+
       - name: Detect orphaned .rs files
         run: python3 scripts/check_orphan_modules.py
 
