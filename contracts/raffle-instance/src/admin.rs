@@ -266,16 +266,16 @@ pub(crate) fn execute_admin_cancel(env: Env) -> Result<(), Error> {
 
 pub(crate) fn update_metadata_hash(env: Env, new_hash: BytesN<32>) -> Result<(), Error> {
     let admin = require_admin(&env)?;
-    let old_hash = env
-        .storage()
-        .instance()
-        .get::<_, BytesN<32>>(&DataKey::MetadataHash)
-        .ok_or(Error::NotInitialized)?;
-    
-    env.storage()
-        .instance()
-        .set(&DataKey::MetadataHash, &new_hash);
-    
+    let mut raffle = crate::read_raffle(&env)?;
+    // The metadata hash is frozen once the prize is in escrow so downstream
+    // verifiers cannot be shown a different payload after deposits begin.
+    if raffle.prize_deposited {
+        return Err(Error::InvalidStatus);
+    }
+    let old_hash = raffle.metadata_hash.clone();
+    raffle.metadata_hash = new_hash.clone();
+    crate::write_raffle(&env, &raffle);
+
     MetadataHashUpdated {
         old_hash,
         new_hash,
@@ -283,7 +283,7 @@ pub(crate) fn update_metadata_hash(env: Env, new_hash: BytesN<32>) -> Result<(),
         timestamp: env.ledger().timestamp(),
     }
     .publish(&env);
-    
+
     Ok(())
 }
 

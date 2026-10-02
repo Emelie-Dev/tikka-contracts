@@ -159,6 +159,8 @@ pub enum RandomnessType {
     Vrf = 1,
     /// Fallback path used when preferred randomness path is unavailable.
     Fallback = 2,
+    /// k-of-n quorum of oracles; seed is aggregated from revealed quorum
+    /// contributions after each reveal was verified against its commitment.
     Quorum = 3,
 }
 
@@ -458,7 +460,7 @@ pub enum AdminOp {
 #[derive(Clone, Debug, PartialEq, Eq)]
 #[contracttype]
 pub struct BuyQuote {
-    /// Gross total before discount: `ticket_price × quantity`.
+    /// Gross total before discount
     pub gross: i128,
     /// Total early-bird discount applied.
     pub discount: i128,

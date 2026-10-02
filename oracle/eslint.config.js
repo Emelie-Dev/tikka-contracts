@@ -4,9 +4,15 @@ import prettierConfig from 'eslint-config-prettier';
 
 export default [
   js.configs.recommended,
-  ...tseslint.configs.recommended,
+  ...tseslint.configs.recommendedTypeChecked,
   prettierConfig,
   {
+    languageOptions: {
+      parserOptions: {
+        projectService: true,
+        tsconfigRootDir: import.meta.dirname,
+      },
+    },
     rules: {
       '@typescript-eslint/no-explicit-any': 'error',
       '@typescript-eslint/no-unused-vars': 'error',
@@ -20,6 +26,8 @@ export default [
           message: 'Read environment variables through src/config.ts.',
         },
       ],
+      // Catches floating promises like the one fixed in #1036.
+      '@typescript-eslint/no-floating-promises': 'error',
     },
   },
   {

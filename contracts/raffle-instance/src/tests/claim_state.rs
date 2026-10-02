@@ -6,7 +6,7 @@ fn claim_state_fixture(
     env.mock_all_auths();
     env.ledger().set_timestamp(1_000);
 
-    let factory = Address::generate(env);
+    let factory = env.register(MockFactory, ());
     let admin = Address::generate(env);
     let creator = Address::generate(env);
     let buyer_a = Address::generate(env);
@@ -47,9 +47,9 @@ fn claim_state_fixture(
         early_bird_discount_bp: 0,
         category: None,
         unique_winners: true,
-        bundles: soroban_sdk::Vec::new(env),
         prize_token: None,
         nft_contract: None,
+            bundles: soroban_sdk::Vec::new(env),
     };
 
     client.init(&factory, &admin, &creator, &config);
