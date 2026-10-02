@@ -1,8 +1,5 @@
 use proptest::prelude::*;
-use crate::{
-    assert_solvent, calculate_tier_prize, DataKey, Raffle, RaffleStatus, Ticket, MAX_PRIZE_AMOUNT,
-    MIN_TICKET_PRICE,
-};
+use crate::{calculate_tier_prize, Raffle, RaffleStatus, MAX_PRIZE_AMOUNT, MIN_TICKET_PRICE};
 use soroban_sdk::{testutils::Address as _, Address, BytesN, Env, String, Vec};
 
 fn valid_prize_weights() -> impl Strategy<Value = std::vec::Vec<u32>> {
@@ -60,6 +57,7 @@ fn test_raffle(env: &Env, weights: &[u32], prize_amount: i128) -> Raffle {
         metadata_hash: BytesN::from_array(env, &[1; 32]),
         unique_winners: false,
         nft_contract: None,
+        bundles: Vec::new(env),
     }
 }
 
@@ -105,6 +103,144 @@ fn final_tier_absorbs_maximum_rounding_dust() {
     );
 }
 
+fn assert_contract_solvent(env: &Env, contract_id: &Address) {
+    env.as_contract(contract_id, || assert_solvent(env));
+}
+
+fn run_solvency_lifecycle(ticket_count: u32, first_tier_bp: u32, cancel: bool) {
+    let env = Env::default();
+    env.mock_all_auths();
+    env.ledger().set_timestamp(1_000);
+
+    let factory = env.register(crate::MockFactory, ());
+    let admin = Address::generate(&env);
+    let creator = Address::generate(&env);
+    let treasury = Address::generate(&env);
+    let token_admin = Address::generate(&env);
+    let payment_token = env
+        .register_stellar_asset_contract_v2(token_admin)
+        .address();
+    let token = soroban_sdk::token::StellarAssetClient::new(&env, &payment_token);
+    let contract_id = env.register(crate::RaffleInstance, ());
+    let client = crate::RaffleInstanceClient::new(&env, &contract_id);
+    let prize_amount = MAX_PRIZE_AMOUNT;
+
+    token.mint(
+        &creator,
+        &(prize_amount + MIN_TICKET_PRICE * ticket_count as i128 * 2),
+    );
+
+    let config = raffle_shared::RaffleConfig {
+        description: String::from_str(&env, "solvency lifecycle"),
+        end_time: 0,
+        no_deadline: true,
+        max_tickets: ticket_count,
+        max_tickets_per_tx: ticket_count,
+        min_tickets: 1,
+        allow_multiple: true,
+        ticket_price: MIN_TICKET_PRICE,
+        payment_token: payment_token.clone(),
+        prize_amount,
+        prizes: soroban_sdk::vec![&env, first_tier_bp, 10_000 - first_tier_bp],
+        randomness_source: raffle_shared::RandomnessSource::Internal,
+        oracle_address: None,
+        protocol_fee_bp: if cancel { 0 } else { 1_000 },
+        treasury_address: Some(treasury.clone()),
+        swap_router: None,
+        tikka_token: None,
+        metadata_hash: BytesN::from_array(&env, &[107; 32]),
+        claim_lockup_seconds: Some(0),
+        claim_expiry_seconds: Some(5),
+        swap_deadline_seconds: Some(0),
+        early_bird_ticket_percentage: 50,
+        early_bird_discount_bp: 1_000,
+        category: None,
+        unique_winners: false,
+        bundles: Vec::new(&env),
+        prize_token: None,
+        nft_contract: None,
+    };
+
+    client.init(&factory, &admin, &creator, &config);
+    env.as_contract(&contract_id, || {
+        env.storage().instance().remove(&DataKey::Factory)
+    });
+    assert_contract_solvent(&env, &contract_id);
+    client.deposit_prize();
+    assert_contract_solvent(&env, &contract_id);
+
+    let mut payers = std::vec::Vec::new();
+    for ticket_index in 0..ticket_count {
+        let payer = Address::generate(&env);
+        token.mint(&payer, &(MIN_TICKET_PRICE * 2));
+        if ticket_index == 1 {
+            let recipient = Address::generate(&env);
+            client.buy_tickets_for(&payer, &recipient, &1);
+        } else {
+            client.buy_tickets(&payer, &1);
+        }
+        payers.push(payer);
+        assert_contract_solvent(&env, &contract_id);
+    }
+
+    if cancel {
+        client.cancel_raffle(&raffle_shared::CancelReason::CreatorCancelled);
+        assert_contract_solvent(&env, &contract_id);
+        client.refund_prize();
+        assert_contract_solvent(&env, &contract_id);
+
+        for ticket_id in 1..=ticket_count {
+            client.refund_ticket(&payers[(ticket_id - 1) as usize], &ticket_id);
+            assert_contract_solvent(&env, &contract_id);
+        }
+
+        let balance = soroban_sdk::token::Client::new(&env, &payment_token).balance(&contract_id);
+        assert_eq!(balance, 0, "cancelled raffle escrow must settle to zero");
+        return;
+    }
+
+    client.finalize_raffle();
+    assert_contract_solvent(&env, &contract_id);
+
+    let raffle = client.get_raffle();
+    let first_winner = raffle.winners.get(0).unwrap().address;
+    client.claim_prize(&first_winner, &0);
+    assert_contract_solvent(&env, &contract_id);
+
+    let fees = client.get_accumulated_fees();
+    if fees > 0 {
+        client.withdraw_fees(&treasury, &fees);
+        assert_contract_solvent(&env, &contract_id);
+    }
+
+    env.ledger().set_timestamp(1_006);
+    client.sweep_unclaimed(&0, &0);
+    assert_contract_solvent(&env, &contract_id);
+    assert_eq!(client.get_raffle().status, RaffleStatus::Claimed);
+}
+
+#[test]
+fn claim_withdraw_and_sweep_preserve_solvency() {
+    run_solvency_lifecycle(4, 5_000, false);
+}
+
+#[test]
+fn cancelled_raffle_refunds_settle_escrow_to_zero() {
+    run_solvency_lifecycle(4, 5_000, true);
+}
+
+proptest! {
+    #![proptest_config(ProptestConfig { cases: 12, .. ProptestConfig::default() })]
+
+    #[test]
+    fn lifecycle_solvency_holds_for_ticket_counts_and_tier_splits(
+        ticket_count in 4u32..=8,
+        first_tier_bp in 1u32..10_000,
+    ) {
+        run_solvency_lifecycle(ticket_count, first_tier_bp, false);
+    }
+}
+
 /// Refund solvency invariant (#827).
 ///
 /// After any refund operation the contract must hold at least as much as it
@@ -114,6 +250,7 @@ fn final_tier_absorbs_maximum_rounding_dust() {
 /// Called by the refund-path lifecycle tests (`claim.rs`) after every
 /// refund/prize-recovery operation, and asserted inline by the fuzz harness
 /// (`fuzz/fuzz_targets/real_harness.rs::refund_cancel`).
+#[allow(dead_code)]
 pub fn assert_refund_solvency(
     env: &Env,
     contract_id: &Address,

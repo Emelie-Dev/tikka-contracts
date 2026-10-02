@@ -120,20 +120,22 @@ Use `nvm install 20 && nvm use 20` (or equivalent) if your default Node is 18/22
 
 ---
 
-## 6. `Error: DEPLOYER_SECRET_KEY is required to deploy`
+## 6. `Error: DEPLOYER_SECRET_KEY is required to configure the deployer identity`
 
-**Symptom:** Deploy scripts exit immediately with that message.
+**Symptom:** A deploy or invoke script cannot find a local `deployer` identity.
 
-**Cause:** `.env` missing, not loaded, or key commented out. Scripts only auto-load `.env` from the **repo root**.
+**Cause:** The Stellar CLI identity is not configured and `DEPLOYER_SECRET_KEY` is missing. Scripts only auto-load `.env` from the **repo root**.
 
 **Fix:**
 
 ```bash
 cp .env.example .env
-# Uncomment and set:
-# DEPLOYER_SECRET_KEY="S..."
+# Set DEPLOYER_SECRET_KEY in the untracked .env file, then run:
 ./scripts/deploy-testnet.sh   # run from repo root
 ```
+
+The key is consumed once from stdin to configure the local Stellar CLI identity;
+it is never included in a Stellar command argument.
 
 ---
 

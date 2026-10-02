@@ -11,6 +11,13 @@ use soroban_sdk::{
     Address, BytesN, Env, String, Vec,
 };
 
+#[cfg(test)]
+use soroban_sdk::{token, Bytes};
+#[cfg(test)]
+use soroban_sdk::testutils::Address as _;
+#[cfg(test)]
+use soroban_sdk::vec;
+
 mod admin;
 mod attestation;
 mod claim;
@@ -24,7 +31,7 @@ mod views;
 
 pub(crate) use helpers::{
     calculate_tier_prize, read_raffle, require_admin, require_global_not_paused,
-    require_not_paused, transition_status, validate_token_address, write_raffle, Guard,
+    transition_status, validate_token_address, write_raffle, Guard,
 };
 #[cfg(any(test, feature = "testutils"))]
 pub use helpers::assert_solvent;
@@ -42,18 +49,52 @@ use raffle_shared::{
         EMERGENCY_WITHDRAW_DELAY_SECONDS, MAX_CLAIM_LOCKUP_SECONDS, MAX_DESCRIPTION_LENGTH,
         MAX_PRIZES, MAX_PRIZE_AMOUNT, MAX_PROTOCOL_FEE_BP,
         MAX_SWAP_DEADLINE_SECONDS, MAX_TICKETS_LIMIT, MIN_CLAIM_EXPIRY_SECONDS, MIN_TICKET_PRICE,
-        ORACLE_TIMEOUT_LEDGERS,
+        ORACLE_TIMEOUT_LEDGERS, RANDOMNESS_MIN_DELAY_LEDGERS,
     },
-    BuyQuote, CancelReason, exceeds_internal_randomness_cap, FairnessData, QuorumConfig, RaffleConfig,
-    RaffleStats, RaffleStatus, RandomnessSource, RandomnessType, Ticket,
+    exceeds_internal_randomness_cap, BuyQuote, CancelReason, FairnessData, QuorumConfig,
+    RaffleConfig, RaffleStats, RaffleStatus, RandomnessSource, RandomnessType, Ticket,
 };
 
-use crate::events::{OracleSeedDelivered, RaffleCreated};
-
-const RANDOMNESS_MIN_DELAY_LEDGERS: u32 = 10;
+use crate::events::RaffleCreated;
 
 #[contract]
 pub struct RaffleInstance;
+
+/// Test-only alias so unit tests may register the contract as `Contract`.
+#[cfg(test)]
+pub use RaffleInstance as Contract;
+
+/// Test-only alias for [`RaffleInstanceClient`].
+#[cfg(test)]
+pub type ContractClient<'a> = RaffleInstanceClient<'a>;
+
+/// Test-only stand-in for the factory contract. The instance invokes
+/// `record_volume` / `track_participant` on its factory during ticket
+/// purchases, so tests register this stub to keep those calls on-ledger.
+#[cfg(test)]
+#[contract]
+pub struct MockFactory;
+
+#[cfg(test)]
+#[contractimpl]
+impl MockFactory {
+    pub fn is_global_paused(_env: Env) -> bool {
+        false
+    }
+
+    pub fn record_volume(_env: Env, _payment_token: Address, _total_price: i128) {}
+
+    pub fn track_participant(_env: Env, _buyer: Address) {}
+
+    pub fn record_leaderboard_entry(
+        _env: Env,
+        _raffle_id: Address,
+        _tickets: i128,
+        _prize_amount: i128,
+        _volume: i128,
+    ) {
+    }
+}
 
 #[contracttype]
 #[derive(Clone)]
@@ -126,6 +167,7 @@ pub struct Raffle {
 pub struct Winner {
     pub address: Address,
     pub claimed: bool,
+    pub swept: bool,
 }
 
 #[contracttype]
@@ -164,6 +206,7 @@ pub enum DataKey {
     OwnerTickets(Address),
     PendingAdminCancel,
     QuorumSeed(Address),
+    QuorumCommit(Address),
     QuorumSubmittedOracles,
     MetadataHash,
     /// Persisted Ed25519 public key for the registered VRF oracle (#985).
@@ -181,9 +224,18 @@ pub enum DataKey {
 pub struct CommitRevealEntry {
     pub committer: Address,
     pub hash: BytesN<32>,
+    /// Pre-image revealed by the committer, once opened during finalization.
+    /// `None` until [`reveal_commit`](crate::draw::reveal_commit) succeeds.
+    pub revealed: Option<BytesN<32>>,
 }
 
-#[contracterror]
+// `export = false`: the Soroban spec XDR caps a `ScSpecUdtErrorEnumV0` at 50
+// cases (`VecM<_, 50>`), and this enum already carries 50+ codes (see
+// `docs/ERRORS.md`, which is the CI-enforced source of truth for error codes
+// and frontend messages). Exporting the spec would make the derive panic with
+// `LengthExceedsMax`, so the spec entry is omitted while every code and name
+// is preserved.
+#[contracterror(export = false)]
 #[derive(Copy, Clone, Debug, Eq, PartialEq, PartialOrd, Ord)]
 pub enum Error {
     RaffleInactive = 2,
@@ -239,8 +291,19 @@ pub enum Error {
     /// The Ed25519 public key submitted to `provide_randomness` does not match
     /// the key registered for this raffle's oracle (#985).
     OraclePublicKeyMismatch = 71,
-    AdminTransferPending = 72,
-    NoPendingTransfer = 73,
+    /// Randomness callback arrived before the raffle entered the drawing phase.
+    /// Code 72.
+    DrawingNotStarted = 72,
+    /// Reveal was submitted for an oracle that has not committed yet. Code 73.
+    MissingCommit = 73,
+    /// Revealed pre-image does not hash to the commitment stored for this
+    /// oracle. Code 74.
+    CommitMismatch = 74,
+    /// Reveal attempted before `k` commitments were recorded. Code 75.
+    TooFewCommits = 75,
+    /// Configured randomness source is too weak for the configured prize
+    /// amount. Code 76.
+    RandomnessSourceTooWeakForPrize = 76,
 }
 
 /// Returns the effective per-address ticket cap, if any.
@@ -289,10 +352,6 @@ impl RaffleInstance {
         creator: Address,
         config: RaffleConfig,
     ) -> Result<(), Error> {
-        if env.storage().instance().has(&DataKey::Raffle) {
-            return Err(Error::AlreadyInitialized);
-        }
-
         if config.description.len() > MAX_DESCRIPTION_LENGTH {
             return Err(Error::InvalidParameters);
         }
@@ -493,6 +552,13 @@ if config.randomness_source == RandomnessSource::External {
             bundles: config.bundles.clone(),
             nft_contract: config.nft_contract.clone(),
         };
+        // Config validation above runs first so that a re-init with an
+        // invalid config reports the actual config error rather than
+        // `AlreadyInitialized`.
+        if env.storage().instance().has(&DataKey::Raffle) {
+            return Err(Error::AlreadyInitialized);
+        }
+
         write_raffle(&env, &raffle);
         env.storage().instance().set(&DataKey::Factory, &factory);
         env.storage().instance().set(&DataKey::Admin, &admin);
@@ -581,12 +647,30 @@ if config.randomness_source == RandomnessSource::External {
         result
     }
 
-    /// Accept a seed from a single oracle in a k-of-n Quorum configuration.
+    /// Phase 1 of the k-of-n quorum commit-reveal protocol (#986): record a
+    /// blinded seed commitment from one of the registered oracles.
     ///
-    /// The caller must be one of the registered oracles in the raffle's
-    /// `RandomnessSource::Quorum` list.  Each oracle may submit at
-    /// most once.  Once the k-th valid submission is received, the seeds are
-    /// aggregated via `aggregate_quorum_seeds` and the raffle is finalized.
+    /// `commit` must be `sha256(seed_be_bytes || oracle_address_xdr ||
+    /// request_id_be_bytes)` so a later reveal can be verified on-chain and
+    /// bound to this oracle and this randomness request.  No seed material is
+    /// written in this phase, so later submitters learn nothing about earlier
+    /// ones.
+    pub fn provide_quorum_commit(
+        env: Env,
+        oracle: Address,
+        commit: BytesN<32>,
+        request_id: u64,
+    ) -> Result<(), Error> {
+        draw::provide_quorum_commit(env, oracle, commit, request_id)
+    }
+
+    /// Phase 2 of the k-of-n quorum commit-reveal protocol (#986): open a
+    /// previously committed seed.
+    ///
+    /// The reveal is rejected unless the oracle committed in phase 1, the
+    /// recorded commitment hashes to `sha256(seed || oracle || request_id)`,
+    /// and at least `k` commitments are already on record.  The raffle is
+    /// finalized on the k-th valid reveal — never on a commit alone.
     pub fn provide_quorum_randomness(
         env: Env,
         caller: Address,
@@ -692,17 +776,25 @@ if config.randomness_source == RandomnessSource::External {
         }
 
         #[cfg(any(test, feature = "testutils"))]
-        helpers::assert_solvent(&env);
+        assert_solvent_after_success(&env, &result);
+        result
+    }
 
-        Ok(())
+    /// Open a ticket-holder commit made while the raffle was `Active` for the
+    /// `CommitReveal` randomness mode (#989).
+    ///
+    /// The seed of a `CommitReveal` draw is derived only from revealed
+    /// pre-images; commits that are never revealed cannot influence it.
+    pub fn reveal_commit(env: Env, ticket_id: u32, preimage: BytesN<32>) -> Result<(), Error> {
+        draw::reveal_commit(env, ticket_id, preimage)
     }
 
     pub fn trigger_randomness_fallback(
         env: Env,
         caller: Address,
-        do_refund: bool,
+        do_cancel: bool,
     ) -> Result<(), Error> {
-        let result = draw::trigger_randomness_fallback(env.clone(), caller, do_refund);
+        let result = draw::trigger_randomness_fallback(env.clone(), caller, do_cancel);
         #[cfg(any(test, feature = "testutils"))]
         assert_solvent_after_success(&env, &result);
         result
@@ -791,15 +883,15 @@ if config.randomness_source == RandomnessSource::External {
         result
     }
 
-    pub fn refund_ticket(env: Env, caller: Address, ticket_id: u32) -> Result<i128, Error> {
-        claim::refund_ticket(env, caller, ticket_id)
+    pub fn refund_ticket(env: Env, ticket_id: u32) -> Result<i128, Error> {
+        claim::refund_ticket(env, ticket_id)
     }
 
     pub fn batch_refund_tickets(
         env: Env,
         caller: Address,
         ticket_ids: Vec<u32>,
-    ) -> Result<i128, Error> {
+    ) -> Result<u32, Error> {
         claim::batch_refund_tickets(env, caller, ticket_ids)
     }
 
@@ -884,16 +976,7 @@ if config.randomness_source == RandomnessSource::External {
         env: Env,
         owner: Address,
     ) -> Result<u32, Error> {
-        let raffle = read_raffle(&env)?;
-        let Some(cap) = effective_max_tickets_per_address(&raffle) else {
-            return Ok(u32::MAX);
-        };
-        let current: u32 = env
-            .storage()
-            .persistent()
-            .get(&DataKey::TicketCount(owner))
-            .unwrap_or(0);
-        Ok(cap.saturating_sub(current))
+        views::get_remaining_ticket_allowance(env, owner)
     }
 
     /// Quote the exact cost of buying `quantity` tickets including early-bird
@@ -947,6 +1030,12 @@ if config.randomness_source == RandomnessSource::External {
         #[cfg(any(test, feature = "testutils"))]
         assert_solvent_after_success(&env, &result);
         result
+    }
+
+    /// Rotate the instance admin address. Invoked cross-contract by the
+    /// factory's `sync_admin` entrypoint.
+    pub fn set_admin(env: Env, new_admin: Address) -> Result<(), Error> {
+        admin::set_admin(env, new_admin)
     }
 
     pub fn set_swap_deadline(env: Env, new_deadline_seconds: u64) -> Result<(), Error> {

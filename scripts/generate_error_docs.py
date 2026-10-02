@@ -86,9 +86,7 @@ def parse_protocol_errors():
 
 
 INSTANCE_DESCRIPTIONS: dict[str, str] = {
-    "OraclePublicKeyMismatch": "Submitted oracle key does not match the registered key",
-    "AdminTransferPending": "An admin transfer is already pending",
-    "NoPendingTransfer": "No admin transfer is pending",
+    "OraclePublicKeyMismatch": "The submitted oracle public key does not match the registered key",
     "RaffleNotFound": "The raffle data was not found in storage",
     "RaffleInactive": "The raffle is not in an active state",
     "TicketsSoldOut": "All tickets have been sold",
@@ -100,6 +98,7 @@ INSTANCE_DESCRIPTIONS: dict[str, str] = {
     "FallbackTooEarly": "Fallback randomness triggered too early",
     "PrizeNotDeposited": "Prize has not been deposited yet",
     "PrizeAlreadyClaimed": "Prize has already been claimed",
+    "PrizeSwept": "Prize was swept to the treasury after the claim period expired",
     "PrizeAlreadyDeposited": "Prize deposit was already completed",
     "NotWinner": "Only the winner can claim the prize",
     "ClaimTooEarly": "Cannot claim before cooldown period",
@@ -148,8 +147,6 @@ INSTANCE_DESCRIPTIONS: dict[str, str] = {
 
 INSTANCE_MESSAGES: dict[str, str] = {
     "OraclePublicKeyMismatch": "Submitted oracle key does not match the registered key",
-    "AdminTransferPending": "An admin transfer is already pending",
-    "NoPendingTransfer": "No admin transfer is pending",
     "RaffleNotFound": "Raffle not found",
     "RaffleInactive": "This raffle is not currently active",
     "TicketsSoldOut": "Sorry, all tickets have been sold!",
@@ -161,6 +158,7 @@ INSTANCE_MESSAGES: dict[str, str] = {
     "FallbackTooEarly": "Fallback randomness not available yet",
     "PrizeNotDeposited": "Prize not yet deposited",
     "PrizeAlreadyClaimed": "Prize has already been claimed",
+    "PrizeSwept": "This prize was swept to the treasury",
     "PrizeAlreadyDeposited": "Prize has already been deposited",
     "NotWinner": "You are not the winner of this raffle",
     "ClaimTooEarly": "Please wait before claiming your prize",

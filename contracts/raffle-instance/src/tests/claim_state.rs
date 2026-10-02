@@ -6,7 +6,7 @@ fn claim_state_fixture(
     env.mock_all_auths();
     env.ledger().set_timestamp(1_000);
 
-    let factory = Address::generate(env);
+    let factory = env.register(MockFactory, ());
     let admin = Address::generate(env);
     let creator = Address::generate(env);
     let buyer_a = Address::generate(env);
@@ -36,7 +36,7 @@ fn claim_state_fixture(
         oracle_address: None,
         oracle_public_key: None,
         protocol_fee_bp: 0,
-        treasury_address: None,
+        treasury_address: Some(Address::generate(env)),
         swap_router: None,
         tikka_token: None,
         metadata_hash: BytesN::from_array(env, &[91; 32]),
@@ -47,9 +47,9 @@ fn claim_state_fixture(
         early_bird_discount_bp: 0,
         category: None,
         unique_winners: true,
-        bundles: soroban_sdk::Vec::new(env),
         prize_token: None,
         nft_contract: None,
+            bundles: soroban_sdk::Vec::new(env),
     };
 
     client.init(&factory, &admin, &creator, &config);
@@ -88,4 +88,29 @@ fn all_tiers_claimed_transitions_raffle_to_claimed() {
     }
 
     assert_eq!(client.get_raffle().status, RaffleStatus::Claimed);
+}
+
+#[test]
+fn swept_prize_is_reported_separately_and_cannot_be_claimed() {
+    let env = Env::default();
+    let (client, _buyer_a, _buyer_b, _) = claim_state_fixture(&env);
+    let winner = client.get_raffle().winners.get(0).unwrap().address;
+    env.ledger()
+        .set_timestamp(2_000 + MIN_CLAIM_EXPIRY_SECONDS);
+
+    assert_eq!(client.sweep_unclaimed(&0, &0), 2);
+    assert_eq!(
+        client.try_claim_prize(&winner, &0),
+        Err(Ok(Error::PrizeSwept))
+    );
+
+    let raffle = client.get_raffle();
+    let swept_entry = raffle.winners.get(0).unwrap();
+    assert!(!swept_entry.claimed);
+    assert!(swept_entry.swept);
+
+    let stats = client.get_stats().unwrap();
+    assert_eq!(stats.claimed_prizes, 0);
+    assert_eq!(stats.swept_prizes, 2);
+    assert_eq!(raffle.status, RaffleStatus::Finalized);
 }

@@ -13,6 +13,9 @@ export interface OracleConfig {
   logLevel: string;
   pollIntervalMs: number;
   healthPort: number;
+  metricsPort: number;
+  metricsBindAddress: string;
+  metricsAuthToken: string;
   alertWebhookUrl: string;
   alertFailureThreshold: number;
   alertRateLimitMs: number;
@@ -102,6 +105,15 @@ export function loadAndValidateConfig(): OracleConfig {
 
   const alertWebhookUrl = process.env['ALERT_WEBHOOK_URL'] ?? '';
   const healthPort = readPositiveInt('HEALTH_PORT', 9090, errors);
+  const metricsPort = readPositiveInt('METRICS_PORT', 9091, errors);
+  if (metricsPort === healthPort) {
+    errors.push('METRICS_PORT must differ from HEALTH_PORT');
+  }
+  const metricsBindAddress = process.env['METRICS_BIND_ADDRESS']?.trim() || '127.0.0.1';
+  const metricsAuthToken = process.env['METRICS_AUTH_TOKEN']?.trim() ?? '';
+  if (!metricsAuthToken && metricsBindAddress !== '127.0.0.1' && metricsBindAddress !== '::1') {
+    errors.push('METRICS_AUTH_TOKEN is required when METRICS_BIND_ADDRESS is not loopback');
+  }
   const alertFailureThreshold = readPositiveInt('ALERT_FAILURE_THRESHOLD', 3, errors);
   const alertRateLimitMs = readPositiveInt('ALERT_RATE_LIMIT_MS', 60_000, errors);
   const alertQueueDepthLimit = readPositiveInt('ALERT_QUEUE_DEPTH_LIMIT', 10, errors);
@@ -127,7 +139,7 @@ export function loadAndValidateConfig(): OracleConfig {
     process.exit(1);
   }
 
-  // At this point errors.length === 0, so rpcUrl and factoryContractId are defined.
+  // At this point errors.length === 0, so rpcUrl, factoryContractId, and oracleSecretKey are defined and valid.
   // The non-null assertions below are replaced by explicit narrowing guards above
   // (process.exit(1) means we never reach here with undefined values).
 
@@ -142,6 +154,9 @@ export function loadAndValidateConfig(): OracleConfig {
     logLevel: process.env['LOG_LEVEL'] ?? 'info',
     pollIntervalMs,
     healthPort,
+    metricsPort,
+    metricsBindAddress,
+    metricsAuthToken,
     alertWebhookUrl,
     alertFailureThreshold,
     alertRateLimitMs,

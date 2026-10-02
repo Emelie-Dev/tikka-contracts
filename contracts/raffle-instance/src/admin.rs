@@ -40,7 +40,7 @@ fn outstanding_prize(_env: &Env, raffle: &crate::Raffle) -> Result<i128, Error> 
         if !raffle
             .winners
             .get(tier_index)
-            .map(|winner| winner.claimed)
+            .map(|winner| winner.claimed || winner.swept)
             .unwrap_or(false)
         {
             outstanding = outstanding
@@ -53,21 +53,20 @@ fn outstanding_prize(_env: &Env, raffle: &crate::Raffle) -> Result<i128, Error> 
 
 fn token_entitlement(env: &Env, raffle: &crate::Raffle, token: &Address) -> Result<i128, Error> {
     let mut entitlement = 0i128;
-    if token == &raffle.payment_token
-        && raffle.status != RaffleStatus::Finalized
-        && raffle.status != RaffleStatus::Claimed
-    {
+    if token == &raffle.payment_token {
+        let fees = env
+            .storage()
+            .instance()
+            .get::<_, i128>(&DataKey::AccumulatedFees)
+            .unwrap_or(0);
         entitlement = entitlement
-            .checked_add(outstanding_ticket_refunds(env, raffle)?)
-            .and_then(|value| {
-                value.checked_add(
-                    env.storage()
-                        .instance()
-                        .get::<_, i128>(&DataKey::AccumulatedFees)
-                        .unwrap_or(0),
-                )
-            })
+            .checked_add(fees)
             .ok_or(Error::ArithmeticOverflow)?;
+        if raffle.status != RaffleStatus::Finalized && raffle.status != RaffleStatus::Claimed {
+            entitlement = entitlement
+                .checked_add(outstanding_ticket_refunds(env, raffle)?)
+                .ok_or(Error::ArithmeticOverflow)?;
+        }
     }
     if token == &raffle.prize_token {
         entitlement = entitlement
@@ -245,7 +244,7 @@ pub(crate) fn cancel_raffle(env: Env, reason: CancelReason) -> Result<(), Error>
         creator: raffle.creator.clone(),
         reason,
         tickets_sold: raffle.tickets_sold,
-        prize_refunded: raffle.prize_deposited,
+        prize_refunded: false,
         timestamp: env.ledger().timestamp(),
     }
     .publish(&env);
@@ -291,7 +290,7 @@ pub(crate) fn execute_admin_cancel(env: Env) -> Result<(), Error> {
         creator: raffle.creator,
         reason: CancelReason::AdminCancelled,
         tickets_sold: raffle.tickets_sold,
-        prize_refunded: raffle.prize_deposited,
+        prize_refunded: false,
         timestamp: now,
     }
     .publish(&env);
@@ -301,16 +300,16 @@ pub(crate) fn execute_admin_cancel(env: Env) -> Result<(), Error> {
 
 pub(crate) fn update_metadata_hash(env: Env, new_hash: BytesN<32>) -> Result<(), Error> {
     let admin = require_admin(&env)?;
-    let old_hash = env
-        .storage()
-        .instance()
-        .get::<_, BytesN<32>>(&DataKey::MetadataHash)
-        .ok_or(Error::NotInitialized)?;
-    
-    env.storage()
-        .instance()
-        .set(&DataKey::MetadataHash, &new_hash);
-    
+    let mut raffle = crate::read_raffle(&env)?;
+    // The metadata hash is frozen once the prize is in escrow so downstream
+    // verifiers cannot be shown a different payload after deposits begin.
+    if raffle.prize_deposited {
+        return Err(Error::InvalidStatus);
+    }
+    let old_hash = raffle.metadata_hash.clone();
+    raffle.metadata_hash = new_hash.clone();
+    crate::write_raffle(&env, &raffle);
+
     MetadataHashUpdated {
         old_hash,
         new_hash,
@@ -318,7 +317,7 @@ pub(crate) fn update_metadata_hash(env: Env, new_hash: BytesN<32>) -> Result<(),
         timestamp: env.ledger().timestamp(),
     }
     .publish(&env);
-    
+
     Ok(())
 }
 
@@ -420,10 +419,12 @@ pub(crate) fn withdraw_fees(env: Env, recipient: Address, amount: i128) -> Resul
         return Err(Error::InsufficientAccumulatedFees);
     }
     let tc = token::Client::new(&env, &raffle.payment_token);
-    tc.transfer(&env.current_contract_address(), &recipient, &amount);
+    tc.try_transfer(&env.current_contract_address(), &recipient, &amount)
+        .map_err(|_| Error::TokenTransferFailed)?;
+    let remaining = acc.checked_sub(amount).ok_or(Error::ArithmeticOverflow)?;
     env.storage()
         .instance()
-        .set(&DataKey::AccumulatedFees, &(acc - amount));
+        .set(&DataKey::AccumulatedFees, &remaining);
     FeesWithdrawn {
         recipient,
         amount,

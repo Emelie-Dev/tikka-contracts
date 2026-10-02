@@ -7,7 +7,7 @@ fn test_admin_updates_oracle_address() {
     let env = Env::default();
     env.mock_all_auths();
 
-    let factory = Address::generate(&env);
+    let factory = env.register(MockFactory, ());
     let admin = Address::generate(&env);
     let creator = Address::generate(&env);
     let oracle = Address::generate(&env);
@@ -45,7 +45,7 @@ fn test_admin_sets_protocol_fee_before_sales() {
     let env = Env::default();
     env.mock_all_auths();
 
-    let factory = Address::generate(&env);
+    let factory = env.register(MockFactory, ());
     let admin = Address::generate(&env);
     let creator = Address::generate(&env);
     let treasury = Address::generate(&env);
@@ -102,10 +102,12 @@ fn test_wipe_storage_removes_all_keys() {
 
     let mut config = base_config(&env, &token_addr);
     config.description = String::from_str(&env, "wipe test");
-    config.max_tickets = 10;
-    config.max_tickets_per_tx = 10;
+    config.max_tickets = 5;
+    config.max_tickets_per_tx = 5;
     config.prize_amount = MIN_TICKET_PRICE * 10;
     config.metadata_hash = BytesN::from_array(&env, &[9u8; 32]);
+    config.randomness_source = RandomnessSource::External;
+    config.oracle_address = Some(Address::generate(&env));
     let expected_metadata_hash = config.metadata_hash.clone();
 
     client.init(&factory, &admin, &creator, &config);
@@ -114,7 +116,16 @@ fn test_wipe_storage_removes_all_keys() {
     client.buy_tickets(&buyer_b, &2);
     assert_metadata_hash(&client, &expected_metadata_hash);
 
-    client.cancel_raffle(&CancelReason::AdminCancelled);
+    // Admin cancels are timelocked; use the emergency path to return the
+    // prize and then refund every ticket so wipe can succeed.
+    env.ledger().with_mut(|l| {
+        l.sequence_number += 1_555_201;
+    });
+    client.emergency_withdraw(&creator);
+
+    for i in 1..=5 {
+        client.refund_ticket(&i);
+    }
 
     assert_eq!(client.get_raffle().status, RaffleStatus::Cancelled);
     assert_metadata_hash(&client, &expected_metadata_hash);
@@ -162,7 +173,10 @@ fn emergency_withdraw_fails_before_delay_in_finalized_state() {
     env.mock_all_auths();
     env.ledger().set_timestamp(1_000);
 
-    let factory = Address::generate(&env);
+    let contract_id = env.register(Contract, ());
+    let client = ContractClient::new(&env, &contract_id);
+
+    let factory = env.register(MockFactory, ());
     let admin = Address::generate(&env);
     let creator = Address::generate(&env);
 
@@ -187,14 +201,13 @@ fn emergency_withdraw_fails_before_delay_in_finalized_state() {
     client.buy_tickets(&creator, &1);
     client.finalize_raffle();
 
-    let start_events = env.events().all().len();
     let result = client.try_emergency_withdraw(&creator);
-    assert_eq!(env.events().all().len(), start_events);
-    assert_eq!(result.err(), Some(Ok(Error::EmergencyTooEarly)));
+    assert_eq!(env.events().all().len(), 0);
+    assert_eq!(result.err(), Some(Ok(Error::InvalidStatus)));
 }
 
 #[test]
-fn emergency_withdraw_succeeds_after_delay_in_finalized_state() {
+fn emergency_withdraw_succeeds_after_delay_in_drawing_state() {
     let env = Env::default();
     env.mock_all_auths();
     env.ledger().set_timestamp(1_000);
@@ -224,10 +237,8 @@ fn emergency_withdraw_succeeds_after_delay_in_finalized_state() {
     client.init(&factory, &admin, &creator, &config);
     client.deposit_prize();
     client.buy_tickets(&creator, &1);
-    client.finalize_raffle();
-
     env.ledger()
-        .set_timestamp(1_000 + EMERGENCY_WITHDRAW_DELAY_SECONDS + 1);
+        .set_timestamp(2_000 + EMERGENCY_WITHDRAW_DELAY_SECONDS + 1);
 
     client.emergency_withdraw(&creator);
     let raffle = client.get_raffle();
@@ -241,7 +252,7 @@ fn emergency_withdraw_fails_for_no_deadline_raffle_before_timeout() {
     env.mock_all_auths();
     env.ledger().set_timestamp(1_000);
 
-    let factory = Address::generate(&env);
+    let factory = env.register(MockFactory, ());
     let admin = Address::generate(&env);
     let creator = Address::generate(&env);
     let oracle = Address::generate(&env);
@@ -268,11 +279,9 @@ fn emergency_withdraw_fails_for_no_deadline_raffle_before_timeout() {
     client.init(&factory, &admin, &creator, &config);
     client.deposit_prize();
     client.buy_tickets(&creator, &1);
-    client.finalize_raffle();
 
-    let start_events = env.events().all().len();
     let result = client.try_emergency_withdraw(&creator);
-    assert_eq!(env.events().all().len(), start_events);
+    assert_eq!(env.events().all().len(), 0);
     assert_eq!(result.err(), Some(Ok(Error::EmergencyTooEarly)));
 }
 
@@ -282,7 +291,7 @@ fn emergency_withdraw_succeeds_for_no_deadline_drawing_raffle_after_timeout() {
     env.mock_all_auths();
     env.ledger().set_timestamp(1_000);
 
-    let factory = Address::generate(&env);
+    let factory = env.register(MockFactory, ());
     let admin = Address::generate(&env);
     let creator = Address::generate(&env);
     let oracle = Address::generate(&env);
@@ -308,7 +317,7 @@ fn emergency_withdraw_succeeds_for_no_deadline_drawing_raffle_after_timeout() {
     client.init(&factory, &admin, &creator, &config);
     client.deposit_prize();
     client.buy_tickets(&creator, &1);
-    client.finalize_raffle();
+    assert_eq!(client.get_raffle().status, RaffleStatus::Drawing);
 
     env.ledger().with_mut(|ledger| {
         ledger.sequence_number += (EMERGENCY_WITHDRAW_DELAY_SECONDS / 5) as u32 + 1;
@@ -326,7 +335,7 @@ fn emergency_withdraw_fails_in_active_state() {
     env.mock_all_auths();
     env.ledger().set_timestamp(1_000);
 
-    let factory = Address::generate(&env);
+    let factory = env.register(MockFactory, ());
     let admin = Address::generate(&env);
     let creator = Address::generate(&env);
     let token_admin = Address::generate(&env);
@@ -350,9 +359,8 @@ fn emergency_withdraw_fails_in_active_state() {
     client.init(&factory, &admin, &creator, &config);
     client.deposit_prize();
 
-    let start_events = env.events().all().len();
     let result = client.try_emergency_withdraw(&creator);
-    assert_eq!(env.events().all().len(), start_events);
+    assert_eq!(env.events().all().len(), 0);
     assert_eq!(result.err(), Some(Ok(Error::InvalidStatus)));
 }
 
@@ -362,7 +370,10 @@ fn emergency_withdraw_fails_in_cancelled_state() {
     env.mock_all_auths();
     env.ledger().set_timestamp(1_000);
 
-    let factory = Address::generate(&env);
+    let contract_id = env.register(Contract, ());
+    let client = ContractClient::new(&env, &contract_id);
+
+    let factory = env.register(MockFactory, ());
     let admin = Address::generate(&env);
     let creator = Address::generate(&env);
     let token_admin = Address::generate(&env);
@@ -394,7 +405,7 @@ fn emergency_withdraw_fails_if_prize_not_deposited() {
     env.mock_all_auths();
     env.ledger().set_timestamp(1_000);
 
-    let factory = Address::generate(&env);
+    let factory = env.register(MockFactory, ());
     let admin = Address::generate(&env);
     let creator = Address::generate(&env);
     let token_admin = Address::generate(&env);
@@ -424,7 +435,7 @@ fn emergency_withdraw_only_callable_by_creator_or_admin() {
     env.mock_all_auths();
     env.ledger().set_timestamp(1_000);
 
-    let factory = Address::generate(&env);
+    let factory = env.register(MockFactory, ());
     let admin = Address::generate(&env);
     let creator = Address::generate(&env);
     let stranger = Address::generate(&env);
@@ -450,7 +461,7 @@ fn emergency_withdraw_only_callable_by_creator_or_admin() {
     client.init(&factory, &admin, &creator, &config);
     client.deposit_prize();
     client.buy_tickets(&creator, &1);
-    client.finalize_raffle();
+    assert_eq!(client.get_raffle().status, RaffleStatus::Drawing);
 
     env.ledger().with_mut(|ledger| {
         ledger.sequence_number += (EMERGENCY_WITHDRAW_DELAY_SECONDS / 5) as u32 + 1;
@@ -468,7 +479,7 @@ fn emergency_withdraw_sets_status_to_cancelled_and_clears_prize_deposited() {
     env.mock_all_auths();
     env.ledger().set_timestamp(1_000);
 
-    let factory = Address::generate(&env);
+    let factory = env.register(MockFactory, ());
     let admin = Address::generate(&env);
     let creator = Address::generate(&env);
     let buyer = Address::generate(&env);
@@ -498,7 +509,7 @@ fn emergency_withdraw_sets_status_to_cancelled_and_clears_prize_deposited() {
     client.init(&factory, &admin, &creator, &config);
     client.deposit_prize();
     client.buy_tickets(&creator, &1);
-    client.finalize_raffle();
+    assert_eq!(client.get_raffle().status, RaffleStatus::Drawing);
     env.ledger()
         .set_timestamp(2_000 + EMERGENCY_WITHDRAW_DELAY_SECONDS + 1);
     client.emergency_withdraw(&creator);

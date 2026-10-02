@@ -38,7 +38,8 @@ async function main(): Promise<void> {
 
   const shutdown = (): void => {
     void pipeline.shutdown().finally(() => {
-      healthServer.close();
+      healthServers.health.close();
+      healthServers.metrics.close();
     });
   };
 

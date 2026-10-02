@@ -8,7 +8,7 @@ fn non_winner_cannot_claim() {
     env.mock_all_auths();
     env.ledger().set_timestamp(1_000);
 
-    let factory = Address::generate(&env);
+    let factory = env.register(MockFactory, ());
     let admin = Address::generate(&env);
     let creator = Address::generate(&env);
     let buyer = Address::generate(&env);
@@ -60,7 +60,7 @@ fn test_refund_guard_released_after_success() {
     env.mock_all_auths();
     env.ledger().set_timestamp(1_000);
 
-    let factory = Address::generate(&env);
+    let factory = env.register(MockFactory, ());
     let admin = Address::generate(&env);
     let creator = Address::generate(&env);
     let token_admin = Address::generate(&env);
@@ -97,7 +97,7 @@ fn test_claim_prize_deducts_protocol_fee() {
     env.mock_all_auths();
     env.ledger().set_timestamp(1_000);
 
-    let factory = Address::generate(&env);
+    let factory = env.register(MockFactory, ());
     let admin = Address::generate(&env);
     let creator = Address::generate(&env);
     let buyer = Address::generate(&env);
