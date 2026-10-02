@@ -42,10 +42,17 @@ rust_toolchain_channel() {
 
 load_env() {
   if [[ -f "${REPO_ROOT}/.env" ]]; then
+    local restore_xtrace=0
+    case "$-" in
+      *x*) restore_xtrace=1; set +x ;;
+    esac
     set -a
     # shellcheck disable=SC1091
     source "${REPO_ROOT}/.env"
     set +a
+    if [[ "${restore_xtrace}" == "1" ]]; then
+      set -x
+    fi
   fi
 }
 
@@ -55,6 +62,48 @@ require_env() {
   if [[ -z "${!name:-}" ]]; then
     echo "Error: ${name} is required${detail:+ (${detail})}" >&2
     exit 1
+  fi
+}
+
+require_identity() {
+  local restore_xtrace=0
+
+  case "$-" in
+    *x*) restore_xtrace=1; set +x ;;
+  esac
+  local identity="$1"
+  local secret_key="${DEPLOYER_SECRET_KEY:-}"
+  export -n secret_key
+  unset DEPLOYER_SECRET_KEY
+
+  require_cmd stellar
+  if stellar keys address "${identity}" >/dev/null 2>&1; then
+    unset secret_key
+    if [[ "${restore_xtrace}" == "1" ]]; then
+      set -x
+    fi
+    return
+  fi
+
+  if [[ -z "${secret_key}" ]]; then
+    echo "Error: DEPLOYER_SECRET_KEY is required to configure the ${identity} identity" >&2
+    if [[ "${restore_xtrace}" == "1" ]]; then
+      set -x
+    fi
+    return 1
+  fi
+
+  if ! printf '%s\n' "${secret_key}" |
+    env -u DEPLOYER_SECRET_KEY stellar keys add "${identity}" --secret-key >/dev/null; then
+    unset secret_key
+    if [[ "${restore_xtrace}" == "1" ]]; then
+      set -x
+    fi
+    return 1
+  fi
+  unset secret_key
+  if [[ "${restore_xtrace}" == "1" ]]; then
+    set -x
   fi
 }
 
@@ -155,11 +204,20 @@ require_no_existing_deployment() {
   exit 1
 }
 
-# Read one top-level string field out of a JSON file without requiring jq.
+# Read one top-level string field out of a JSON file.
 json_field() {
   local file="$1" key="$2"
   [[ -f "${file}" ]] || return 0
-  sed -n "s/.*\"${key}\"[[:space:]]*:[[:space:]]*\"\([^\"]*\)\".*/\1/p" "${file}" | head -1
+  python3 - "${file}" "${key}" <<'PY'
+import json
+import sys
+
+with open(sys.argv[1], encoding="utf-8") as manifest:
+    value = json.load(manifest).get(sys.argv[2])
+
+if isinstance(value, str):
+    print(value)
+PY
 }
 
 # Install the instance WASM, deploy the factory, initialise it, and verify.
@@ -251,27 +309,49 @@ write_deployment_manifest() {
     git_dirty=false
   fi
 
-  read -r -d '' record <<EOF || true
-{
-  "network": "${network}",
-  "contractId": "${FACTORY_CONTRACT_ID}",
-  "factoryWasmHash": "${FACTORY_WASM_HASH}",
-  "instanceWasmHash": "${INSTANCE_WASM_HASH}",
-  "admin": "${admin}",
-  "treasury": "${treasury}",
-  "protocolFeeBp": ${protocol_fee_bp},
-  "gitCommit": "${git_commit}",
-  "gitDirty": ${git_dirty},
-  "wasmTarget": "${WASM_TARGET}",
-  "rustToolchain": "$(rust_toolchain_channel)",
-  "stellarCli": "$(stellar_cli_version)",
-  "timestamp": "${timestamp}"
+  record="$(
+    NETWORK="${network}" \
+    CONTRACT_ID="${FACTORY_CONTRACT_ID}" \
+    FACTORY_WASM_HASH="${FACTORY_WASM_HASH}" \
+    INSTANCE_WASM_HASH="${INSTANCE_WASM_HASH}" \
+    ADMIN="${admin}" \
+    TREASURY="${treasury}" \
+    PROTOCOL_FEE_BP="${protocol_fee_bp}" \
+    GIT_COMMIT="${git_commit}" \
+    GIT_DIRTY="${git_dirty}" \
+    WASM_TARGET_VALUE="${WASM_TARGET}" \
+    RUST_TOOLCHAIN="$(rust_toolchain_channel)" \
+    STELLAR_CLI="$(stellar_cli_version)" \
+    TIMESTAMP="${timestamp}" \
+    python3 <<'PY'
+import json
+import os
+import sys
+
+record = {
+    "network": os.environ["NETWORK"],
+    "contractId": os.environ["CONTRACT_ID"],
+    "factoryWasmHash": os.environ["FACTORY_WASM_HASH"],
+    "instanceWasmHash": os.environ["INSTANCE_WASM_HASH"],
+    "admin": os.environ["ADMIN"],
+    "treasury": os.environ["TREASURY"],
+    "protocolFeeBp": int(os.environ["PROTOCOL_FEE_BP"]),
+    "gitCommit": os.environ["GIT_COMMIT"],
+    "gitDirty": os.environ["GIT_DIRTY"] == "true",
+    "wasmTarget": os.environ["WASM_TARGET_VALUE"],
+    "rustToolchain": os.environ["RUST_TOOLCHAIN"],
+    "stellarCli": os.environ["STELLAR_CLI"],
+    "timestamp": os.environ["TIMESTAMP"],
 }
-EOF
+json.dump(record, sys.stdout, indent=2)
+sys.stdout.write("\n")
+PY
+  )"
 
   printf '%s\n' "${record}" > "${dir}/${network}.json"
-  printf '%s\n' "${record}" | tr -d '\n ' >> "${dir}/${network}-history.jsonl"
-  printf '\n' >> "${dir}/${network}-history.jsonl"
+  printf '%s\n' "${record}" | python3 -c \
+    'import json, sys; json.dump(json.load(sys.stdin), sys.stdout, separators=(",", ":")); sys.stdout.write("\n")' \
+    >> "${dir}/${network}-history.jsonl"
 
   echo "Wrote ${dir}/${network}.json"
   echo "Appended to ${dir}/${network}-history.jsonl"

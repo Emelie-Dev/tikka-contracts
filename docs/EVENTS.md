@@ -348,7 +348,6 @@ Topic: `tikka:recurring_raffle_created`
 | `creator` | `Address` |  | Creator that owns the recurring schedule. |
 | `interval_seconds` | `u64` |  | Seconds between consecutive rounds. |
 | `max_rounds` | `u32` |  | Maximum number of rounds; `0` means unlimited. |
-| `auto_fund` | `bool` |  | Whether prize funding for each round happens automatically. |
 | `next_due` | `u64` |  | Ledger timestamp of the next scheduled round. |
 | `timestamp` | `u64` |  | Ledger timestamp of the schedule creation. |
 
@@ -677,7 +676,8 @@ Topic: `tikka:protocol_fee_updated`
 
 ## RaffleCancelled
 
-Emitted when a raffle is cancelled and (if applicable) prizes refunded.
+Emitted when a raffle is cancelled. `prize_refunded` is true only after the
+prize tokens have actually been transferred back to the creator.
 
 Topic: `tikka:raffle_cancelled`
 
@@ -686,7 +686,7 @@ Topic: `tikka:raffle_cancelled`
 | `creator` | `Address` |  | Address that created the raffle. |
 | `reason` | `CancelReason` |  | Machine-readable cancel reason. |
 | `tickets_sold` | `u32` |  | Number of tickets sold before cancellation. |
-| `prize_refunded` | `bool` |  | Whether the deposited prize was returned to the creator. |
+| `prize_refunded` | `bool` |  | Whether the deposited prize has left escrow and been returned to the creator. |
 | `timestamp` | `u64` |  | Ledger timestamp of the cancellation. |
 
 **Emitted by:** `cancel_raffle`, `trigger_randomness_fallback`
@@ -870,7 +870,7 @@ Topic: `tikka:ticket_gifted`
 | `ticket_price` | `i128` |  | Nominal unit price used for reserved seats. |
 | `effective_ticket_price` | `i128` |  | Effective unit price actually charged (equals `ticket_price` when no discount applies). |
 | `total_paid` | `i128` |  | Total paid by `buyer`. |
-| `protocol_fee` | `i128` |  | Protocol fee (basis points of `total_paid`). |
+| `protocol_fee` | `i128` |  | Protocol fee (basis points of `total_paid`) held for later withdrawal. |
 | `timestamp` | `u64` |  | Ledger timestamp of the gift. |
 
 **Emitted by:** `buy_tickets_for`
@@ -909,7 +909,7 @@ Topic: `tikka:ticket_purchased`
 | `ticket_price` | `i128` |  | Nominal unit price used for reserved seats. |
 | `effective_ticket_price` | `i128` |  | Effective unit price actually charged (equals `ticket_price` when no discount applies). |
 | `total_paid` | `i128` |  | Total paid: `effective_ticket_price * quantity` after any discounts. |
-| `protocol_fee` | `i128` |  | Protocol fee (basis points of `total_paid`) withheld and forwarded to the treasury. |
+| `protocol_fee` | `i128` |  | Protocol fee (basis points of `total_paid`) held for later withdrawal. |
 | `timestamp` | `u64` |  | Ledger timestamp of the purchase. |
 
 **Emitted by:** `buy_tickets`

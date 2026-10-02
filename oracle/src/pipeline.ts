@@ -5,17 +5,20 @@ import { KeyService } from './keys/key.service';
 import { VrfService } from './vrf/vrf.service';
 import { TxSubmitterService } from './tx/tx-submitter.service';
 import { DeduplicationStore } from './deduplication/deduplication.store';
+import { DeadLetterStore } from './queue/dead-letter.store';
 import { GracefulShutdown } from './shutdown/graceful-shutdown';
 import { Alerter } from './alert/alerter';
 import { OracleConfig } from './config';
 import { QuorumService } from './quorum/quorum.service';
 import { childLogger } from './logging/logger';
+import { oracleDeadLetterTotal } from './metrics';
 
 export interface PipelineOptions {
   config: OracleConfig;
   alerter: Alerter;
-  checkpointStore?: LedgerCheckpointStore;
-  dedupStore?: DeduplicationStore;
+  checkpointStore?: LedgerCheckpointStore | undefined;
+  dedupStore?: DeduplicationStore | undefined;
+  deadLetterStore?: DeadLetterStore | undefined;
 }
 
 export class OraclePipeline {
@@ -26,15 +29,18 @@ export class OraclePipeline {
   private readonly txSubmitter: TxSubmitterService;
   private readonly dedupStore: DeduplicationStore;
   private readonly checkpointStore: LedgerCheckpointStore;
+  private readonly deadLetterStore: DeadLetterStore;
   private readonly gracefulShutdown: GracefulShutdown;
   private readonly alerter: Alerter;
   private readonly config: OracleConfig;
   private quorumService?: QuorumService;
 
   private running = false;
+  /** Stored so shutdown() can await the loop draining cleanly. */
+  private processQueuePromise: Promise<void> | null = null;
 
   constructor(options: PipelineOptions) {
-    const { config, alerter, checkpointStore, dedupStore } = options;
+    const { config, alerter, checkpointStore, dedupStore, deadLetterStore } = options;
 
     this.config = config;
     this.alerter = alerter;
@@ -44,13 +50,22 @@ export class OraclePipeline {
     // Note: initialize() is called in start() to allow async constructor pattern
 
     // Initialize checkpoint store
-    this.checkpointStore = checkpointStore ?? new FileLedgerCheckpointStore(config.checkpointPath);
+    this.checkpointStore = checkpointStore ?? new FileLedgerCheckpointStore('./data/checkpoint.json');
 
     // Initialize deduplication store
-    this.dedupStore = dedupStore ?? new DeduplicationStore(config.dedupPath);
+    this.dedupStore = dedupStore ?? new DeduplicationStore('./data/dedup.json');
 
-    // Initialize request queue
-    this.requestQueue = new RequestQueue();
+    // Initialize dead-letter store
+    this.deadLetterStore = deadLetterStore ?? new DeadLetterStore('./data/dead-letter.json');
+
+    // Initialize request queue with dead-letter store and limits from config
+    this.requestQueue = new RequestQueue({
+      alerter: this.alerter,
+      deadLetterStore: this.deadLetterStore,
+      depthLimit: config.alertQueueDepthLimit,
+      ageLimitMs: config.alertQueueAgeLimitMs,
+      maxAttempts: config.queueMaxAttempts,
+    });
 
     // Initialize VRF service
     this.vrfService = new VrfService(this.keyService);
@@ -72,7 +87,7 @@ export class OraclePipeline {
         rpcUrl: config.rpcUrl,
         pollIntervalMs: config.pollIntervalMs,
         alerter: this.alerter,
-        rpcUnreachableThreshold: config.alertRpcUnreachableThreshold,
+        rpcUnreachableThreshold: this.config.alertRpcUnreachableThreshold,
       }
     );
 
@@ -91,7 +106,7 @@ export class OraclePipeline {
               message: `Oracle service ${code === 0 ? 'stopped' : 'failed'} (exit code ${code})`,
             })
             .finally(() => {
-              if (process.env.NODE_ENV !== 'test') {
+              if (process.env['NODE_ENV'] !== 'test') {
                 process.exit(code);
               }
             });
@@ -109,7 +124,7 @@ export class OraclePipeline {
 
     const oracleAddress = this.keyService.getPublicKey();
     const networkPassphrase = process.env.STELLAR_NETWORK_PASSPHRASE ?? 'Test Passphrase';
-    this.quorumService = new QuorumService(this.config.rpcUrl, networkPassphrase, oracleAddress, this.config.rpcSimulateTimeoutMs);
+    this.quorumService = new QuorumService(this.config.rpcUrl, networkPassphrase, oracleAddress);
 
     // Create event listener with actual public key
     this.eventListener = new EventListenerService(
@@ -132,11 +147,19 @@ export class OraclePipeline {
     // Zeroize key material after all signing work is done but before exit.
     this.gracefulShutdown.registerShutdownHook(() => this.keyService.shutdown());
 
-
-
     this.running = true;
-    // Start processing jobs from the queue
-    this.processQueue();
+
+    // Capture the promise so shutdown() can await it and so any unhandled
+    // rejection is surfaced as an alert rather than a silent process crash.
+    this.processQueuePromise = this.processQueue().catch((error: unknown) => {
+      this.running = false;
+      queueLogger.error('processQueue terminated unexpectedly:', error);
+      void this.alerter.notify({
+        type: 'process_stop',
+        severity: 'critical',
+        message: `Oracle processQueue crashed: ${error instanceof Error ? error.message : String(error)}`,
+      });
+    });
 
     // Start listening for events in the background
     void this.eventListener.startListening(contractIds);
@@ -148,8 +171,8 @@ export class OraclePipeline {
     const { requestId, raffleContract } = job;
     const jobLogger = childLogger({ requestId: requestId.toString(), raffleId: raffleContract });
 
-    // Check for duplicates
-    if (this.dedupStore.isDuplicate(requestId, raffleContract)) {
+    // Pure check — does NOT mark the request as seen
+    if (this.dedupStore.has(requestId, raffleContract)) {
       jobLogger.info(`Skipping duplicate request: raffle=${raffleContract} requestId=${requestId}`);
       return false;
     }
@@ -161,14 +184,14 @@ export class OraclePipeline {
 
       // Check if we participate in Quorum or Single Oracle
       const quorumCheck = await this.quorumService.checkQuorumParticipation(raffleContract);
-      
+
       if (quorumCheck.isParticipant) {
-        // Quorum mode!
-        console.log(`Processing Quorum randomness request for raffle=${raffleContract} requestId=${requestId}`);
-        
+        // Quorum mode
+        queueLogger.info(`Processing Quorum randomness request for raffle=${raffleContract} requestId=${requestId}`);
+
         // Generate secure independent seed
         const randomSeed = this.quorumService.generateSecureSeed();
-        
+
         // Submit quorum transaction
         const txHash = await this.txSubmitter.submitProvideQuorumRandomness({
           raffleContract,
@@ -176,7 +199,7 @@ export class OraclePipeline {
           requestId,
         });
 
-        console.log(`Successfully submitted provide_quorum_randomness: ${txHash} for raffle=${raffleContract} requestId=${requestId}`);
+        queueLogger.info(`Successfully submitted provide_quorum_randomness: ${txHash} for raffle=${raffleContract} requestId=${requestId}`);
       } else {
         // External (single oracle) mode!
         console.log(`Processing single-oracle VRF randomness request for raffle=${raffleContract} requestId=${requestId}`);
@@ -192,11 +215,12 @@ export class OraclePipeline {
           requestId,
         });
 
-        console.log(`Successfully submitted provide_randomness: ${txHash} for raffle=${raffleContract} requestId=${requestId}`);
+        queueLogger.info(`Successfully submitted provide_randomness: ${txHash} for raffle=${raffleContract} requestId=${requestId}`);
       }
 
-      // Mark as processed (after successful submission)
-      this.dedupStore.isDuplicate(requestId, raffleContract); // This marks it as seen
+      // Mark as processed only after a successful on-chain submission so that
+      // a mid-flight failure does not permanently suppress retries (#1035).
+      this.dedupStore.markProcessed(requestId, raffleContract);
 
       return true;
     } catch (error) {
@@ -214,20 +238,58 @@ export class OraclePipeline {
       }
 
       for (const job of jobs) {
+        const { requestId, raffleContract } = job;
+        const jobLogger = childLogger({ requestId: requestId.toString(), raffleId: raffleContract });
+
         try {
           await this.processJob(job);
         } catch (error) {
-          queueLogger.error('Error processing job:', error);
-          // Job will be retried on next restart if not marked as duplicate
+          const errorMessage = error instanceof Error ? error.message : String(error);
+          jobLogger.error('Error processing job:', error);
+
+          const outcome = this.requestQueue.recordFailure(
+            raffleContract,
+            requestId,
+            errorMessage,
+          );
+
+          if (outcome === 'dead_lettered') {
+            oracleDeadLetterTotal.inc();
+            if (this.alerter) {
+              void this.alerter.notify({
+                type: 'dead_letter',
+                severity: 'critical',
+                bypassRateLimit: true,
+                message: `Randomness request dead-lettered: raffle=${raffleContract} requestId=${requestId}`,
+                details: {
+                  raffleContract,
+                  requestId: requestId.toString(),
+                  error: errorMessage,
+                },
+              });
+            }
+          }
         }
       }
     }
   }
 
   async shutdown(): Promise<void> {
-    console.log('Shutting down oracle service...');
+    queueLogger.info('Shutting down oracle service...');
     this.running = false;
+    // Await the queue loop so draining completes before we release control
+    if (this.processQueuePromise !== null) {
+      await this.processQueuePromise;
+    }
     await this.gracefulShutdown.shutdown();
+  }
+
+  async processJobForShutdown(job: {
+    requestId: bigint;
+    raffleContract: string;
+    timestamp: bigint;
+  }): Promise<boolean> {
+    return this.processJob(job);
   }
 }
 
@@ -237,7 +299,6 @@ export function createPipeline(config: OracleConfig, options: Partial<PipelineOp
     alerter: options.alerter,
     checkpointStore: options.checkpointStore,
     dedupStore: options.dedupStore,
+    deadLetterStore: options.deadLetterStore,
   });
 }
-
-

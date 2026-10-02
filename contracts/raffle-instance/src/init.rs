@@ -20,9 +20,9 @@
 //!                                                  ticket sales open
 //! ```
 //!
-//! See [`docs/RANDOMNESS.md`](../../../../docs/RANDOMNESS.md) for a full
+//! See [`docs/RANDOMNESS.md`](../../../docs/RANDOMNESS.md) for a full
 //! explanation of the three randomness modes that can be configured here, and
-//! [`docs/EVENTS.md`](../../../../docs/EVENTS.md) for the events emitted by
+//! [`docs/EVENTS.md`](../../../docs/EVENTS.md) for the events emitted by
 //! these functions.
 
 use soroban_sdk::{token, Address, Env};
@@ -59,7 +59,7 @@ use crate::{
 /// | `ticket_price` | `≥ MIN_TICKET_PRICE` (10 000 stroops) |
 /// | `prize_amount` | `ticket_price ≤ prize_amount ≤ MAX_PRIZE_AMOUNT` |
 /// | `prizes` | Non-empty, `len ≤ MAX_PRIZES` (100), basis-points sum == 10 000 |
-/// | `protocol_fee_bp` | `≤ 10 000`; charged at ticket purchase only |
+/// | `protocol_fee_bp` | `≤ 10 000`; applied to ticket purchases and prize claims |
 /// | `oracle_address` | Required (and not self) when `randomness_source == External`; forbidden otherwise |
 /// | `metadata_hash` | Must not be the all-zero 32-byte value |
 /// | `category` | See [`validate_category`] |
@@ -222,7 +222,7 @@ pub(crate) fn init(
 /// - [`events::RaffleStatusChanged`] — records the `PendingPrize → Active`
 ///   transition.
 ///
-/// See also: [`docs/EVENTS.md`](../../../../docs/EVENTS.md) — `PrizeDeposited`,
+/// See also: [`docs/EVENTS.md`](../../../docs/EVENTS.md) — `PrizeDeposited`,
 /// `RaffleStatusChanged`.
 pub(crate) fn deposit_prize(env: Env) -> Result<(), Error> {
     require_not_paused(&env)?;

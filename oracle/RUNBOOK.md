@@ -41,10 +41,10 @@ docker-compose ps
 # View logs
 docker-compose logs -f oracle
 
-# Check health endpoint
+# Check health endpoint (returns {"status":"ok"})
 curl http://localhost:9090/health
 
-# View metrics
+# View metrics (Prometheus text format)
 curl http://localhost:9090/metrics
 ```
 

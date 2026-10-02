@@ -286,8 +286,6 @@ pub struct RecurringRaffleCreated {
     pub interval_seconds: u64,
     /// Maximum number of rounds; `0` means unlimited.
     pub max_rounds: u32,
-    /// Whether prize funding for each round happens automatically.
-    pub auto_fund: bool,
     /// Ledger timestamp of the next scheduled round.
     pub next_due: u64,
     /// Ledger timestamp of the schedule creation.

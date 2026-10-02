@@ -22,6 +22,8 @@ if [[ -z "${1:-}" ]]; then
     exit 1
 fi
 
+require_identity deployer
+
 FUNCTION_NAME="$1"
 shift
 
@@ -30,5 +32,5 @@ echo "Invoking ${FUNCTION_NAME} on contract ${CONTRACT_ID} (${NETWORK})..."
 stellar contract invoke \
   --id "${CONTRACT_ID}" \
   --network "${NETWORK}" \
-  --source "${DEPLOYER_SECRET_KEY:-}" \
+  --source deployer \
   -- "${FUNCTION_NAME}" "$@"

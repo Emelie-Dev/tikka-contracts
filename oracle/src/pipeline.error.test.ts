@@ -1,18 +1,18 @@
 import { Keypair, rpc as SorobanRpc } from '@stellar/stellar-sdk';
 import { Alerter } from './alert/alerter';
 import { TxSubmitterService } from './tx/tx-submitter.service';
-import { KeyService } from './keys/key.service';
+import { EnvSecretsAdapter, KeyService } from './keys/key.service';
 
 jest.mock('@stellar/stellar-sdk', () => {
   const original = jest.requireActual('@stellar/stellar-sdk');
   const mock = Object.create(original);
-  
+
   Object.defineProperty(mock, 'scValToNative', {
     value: jest.fn(),
     writable: true,
     configurable: true,
   });
-  
+
   const mockRpc = Object.create(original.rpc);
   Object.defineProperty(mockRpc, 'assembleTransaction', {
     value: jest.fn().mockImplementation((tx: any) => ({
@@ -42,7 +42,7 @@ describe('Oracle Pipeline Integration - Error and Retry Paths', () => {
 
   beforeEach(async () => {
     process.env.ORACLE_SECRET_KEY = testOracleKeypair.secret();
-    keyService = new KeyService();
+    keyService = new KeyService(new EnvSecretsAdapter(process.env));
     await keyService.initialize();
   });
 
@@ -130,7 +130,7 @@ describe('Oracle Pipeline Integration - Error and Retry Paths', () => {
         publicKey: keyService.getPublicKeyBytes(),
         proof: new Uint8Array(64),
         requestId,
-      }),
+      })
     ).rejects.toThrow(/Permanent failure/);
   });
 
@@ -153,7 +153,7 @@ describe('Oracle Pipeline Integration - Error and Retry Paths', () => {
         publicKey: keyService.getPublicKeyBytes(),
         proof: new Uint8Array(64),
         requestId,
-      }),
+      })
     ).rejects.toThrow(/after 2 attempts/);
 
     expect(attempts).toBe(2);

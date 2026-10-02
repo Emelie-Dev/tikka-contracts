@@ -8,8 +8,29 @@
 
 // --- Raffle instance limits -------------------------------------------------
 
+/// Minimum number of ledgers that must elapse after a randomness request is
+/// recorded before a VRF proof may be submitted (~50 seconds at 5-second
+/// ledger close times).
+///
+/// This is the *lower* bound of the randomness window: it stops an oracle from
+/// answering in the same ledger the request was made, so the request height is
+/// already committed on-chain before the proof exists. It is the matched pair
+/// of [`ORACLE_TIMEOUT_LEDGERS`], which is the *upper* bound of the same
+/// window:
+///
+/// | Bound | Constant | Guards | Value |
+/// | --- | --- | --- | --- |
+/// | lower | `RANDOMNESS_MIN_DELAY_LEDGERS` | `submit_vrf_proof` | 10 ledgers |
+/// | upper | `ORACLE_TIMEOUT_LEDGERS` | `trigger_randomness_fallback` | 200 ledgers |
+///
+/// See `docs/RANDOMNESS.md` for the full timeline.
+pub const RANDOMNESS_MIN_DELAY_LEDGERS: u32 = 10;
+
 /// Maximum number of ledgers the oracle may take to respond before a fallback
 /// is permitted (~17 minutes at 5-second ledger close times).
+///
+/// This is the *upper* bound of the randomness window; the lower bound is
+/// [`RANDOMNESS_MIN_DELAY_LEDGERS`].
 pub const ORACLE_TIMEOUT_LEDGERS: u32 = 200;
 
 /// Maximum byte-length of a raffle description string.
@@ -41,6 +62,16 @@ pub const MAX_PRIZE_AMOUNT: i128 = 1_000_000_000_000_000_000_000; // 1e21
 /// docs/RANDOMNESS.md as an enforced limit. See docs/RANDOMNESS.md. (#773)
 pub const MAX_INTERNAL_RANDOMNESS_PRIZE_AMOUNT: i128 = 5_000_000_000; // 5e9 ≈ 500 XLM
 
+/// Minimum number of revealed commits required before a
+/// [`RandomnessSource::CommitReveal`](crate::RandomnessSource::CommitReveal)
+/// draw may derive its seed from the revealed preimages.
+///
+/// A single participant could otherwise grind a commit hash offline until the
+/// derived seed selects their own ticket, so a draw that collects fewer
+/// reveals than this threshold falls back to the internal PRNG seed and emits
+/// `RandomnessFallbackTriggered`.
+pub const MIN_COMMITS_FOR_DRAW: u32 = 2;
+
 // --- Timing constants -------------------------------------------------------
 
 /// Default delay (seconds) between raffle finalization and when winners may
@@ -59,6 +90,9 @@ pub const DEFAULT_CLAIM_EXPIRY_SECONDS: u64 = MIN_CLAIM_EXPIRY_SECONDS;
 
 /// Maximum unclaimed prize tiers processed in a single `sweep_unclaimed` call.
 pub const MAX_SWEEP_UNCLAIMED_PER_CALL: u32 = 10;
+
+/// Maximum tickets refunded in a single `batch_refund_tickets` call.
+pub const MAX_BATCH_REFUND_PER_CALL: u32 = 10;
 
 /// Default window (seconds) added to the current timestamp when submitting
 /// token-swap transactions.  Equals 5 minutes.

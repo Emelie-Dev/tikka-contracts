@@ -23,5 +23,11 @@
     "memory_bytes": 16777216,
     "read_bytes": 0,
     "write_bytes": 0
+  },
+  "batch_refund_max_batch": {
+    "cpu_instructions": 30000000,
+    "memory_bytes": 10485760,
+    "read_bytes": 0,
+    "write_bytes": 0
   }
 }

@@ -120,20 +120,22 @@ Use `nvm install 20 && nvm use 20` (or equivalent) if your default Node is 18/22
 
 ---
 
-## 6. `Error: DEPLOYER_SECRET_KEY is required to deploy`
+## 6. `Error: DEPLOYER_SECRET_KEY is required to configure the deployer identity`
 
-**Symptom:** Deploy scripts exit immediately with that message.
+**Symptom:** A deploy or invoke script cannot find a local `deployer` identity.
 
-**Cause:** `.env` missing, not loaded, or key commented out. Scripts only auto-load `.env` from the **repo root**.
+**Cause:** The Stellar CLI identity is not configured and `DEPLOYER_SECRET_KEY` is missing. Scripts only auto-load `.env` from the **repo root**.
 
 **Fix:**
 
 ```bash
 cp .env.example .env
-# Uncomment and set:
-# DEPLOYER_SECRET_KEY="S..."
+# Set DEPLOYER_SECRET_KEY in the untracked .env file, then run:
 ./scripts/deploy-testnet.sh   # run from repo root
 ```
+
+The key is consumed once from stdin to configure the local Stellar CLI identity;
+it is never included in a Stellar command argument.
 
 ---
 
@@ -221,6 +223,26 @@ Re-commit before pushing.
 **Policy:** If a raffle is cancelled or fails, the refund for any tickets goes to the **payer** (the one who bought the ticket), not the ticket owner/recipient.
 
 **Why?** The gifter paid the funds, so on cancellation, the funds are returned to the source. The recipient did not pay, so they do not receive a refund. Either party (payer or owner) can initiate the refund, but the contract always directs the funds to the original payer.
+
+---
+
+## 12. Who can call `finalize_raffle`, and when?
+
+**Policy:** **Anyone.** `finalize_raffle` is permissionless and does not require creator authorization.
+
+**When?** Only once the raffle is contractually over, which the contract checks on chain:
+
+- `time_ended` — `ledger_timestamp >= end_time` (not applied when `no_deadline` is `true`), or
+- `tickets_full` — `tickets_sold >= max_tickets`.
+
+Calling it before either condition holds reverts with `InvalidStateTransition`; calling it again
+after the draw has moved on reverts with `InvalidStatus`.
+
+**Why not creator-only?** The preconditions are fully verifiable on chain, so there was no reason
+to gate the call on the creator's signature. Requiring it let a creator who disliked the
+participant set simply never call it, leaving buyers' funds escrowed indefinitely. `refund_ticket`
+was no escape either, because it only applies to a `Cancelled` or `Failed` raffle — admin
+cancellation was the only remaining exit. See [#1000].
 
 ---
 

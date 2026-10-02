@@ -64,8 +64,8 @@ Complete documentation of all error codes used in Tikka contracts. Includes erro
 ### [FEE_MODEL.md](FEE_MODEL.md)
 
 **Audience:** Contributors, Integrators  
-Explains the implemented Tikka protocol fee model. Fees are currently
-collected at ticket purchase only; prize-claim fees are not implemented.
+Explains the implemented Tikka protocol fee model. Ticket-purchase fees accrue
+until withdrawal; prize-claim fees are transferred directly to the treasury.
 
 ### [FAQ.md](FAQ.md)
 
