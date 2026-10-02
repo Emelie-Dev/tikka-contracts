@@ -453,7 +453,7 @@ pub enum AdminOp {
 #[derive(Clone, Debug, PartialEq, Eq)]
 #[contracttype]
 pub struct BuyQuote {
-    /// Gross total before discount: `ticket_price × quantity`.
+    /// Gross total before discount
     pub gross: i128,
     /// Total early-bird discount applied.
     pub discount: i128,

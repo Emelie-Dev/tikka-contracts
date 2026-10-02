@@ -229,15 +229,16 @@ pub(crate) fn buy_tickets(env: Env, buyer: Address, quantity: u32) -> Result<u32
     if protocol_fee > 0 {
         if let Some(treasury) = &raffle.treasury_address {
             token_client.transfer(&contract_address, treasury, &protocol_fee);
+        } else {
+            let prev: i128 = env
+                .storage()
+                .instance()
+                .get(&DataKey::AccumulatedFees)
+                .unwrap_or(0);
+            env.storage()
+                .instance()
+                .set(&DataKey::AccumulatedFees, &(prev + protocol_fee));
         }
-        let prev: i128 = env
-            .storage()
-            .instance()
-            .get(&DataKey::AccumulatedFees)
-            .unwrap_or(0);
-        env.storage()
-            .instance()
-            .set(&DataKey::AccumulatedFees, &(prev + protocol_fee));
     }
 
     //  6. NOW mutate state (write tickets)
@@ -491,15 +492,16 @@ pub(crate) fn buy_tickets_for(env: Env, buyer: Address, recipient: Address, quan
     if protocol_fee > 0 {
         if let Some(treasury) = &raffle.treasury_address {
             token_client.transfer(&contract_address, treasury, &protocol_fee);
+        } else {
+            let prev: i128 = env
+                .storage()
+                .instance()
+                .get(&DataKey::AccumulatedFees)
+                .unwrap_or(0);
+            env.storage()
+                .instance()
+                .set(&DataKey::AccumulatedFees, &(prev + protocol_fee));
         }
-        let prev: i128 = env
-            .storage()
-            .instance()
-            .get(&DataKey::AccumulatedFees)
-            .unwrap_or(0);
-        env.storage()
-            .instance()
-            .set(&DataKey::AccumulatedFees, &(prev + protocol_fee));
     }
 
     //  6. NOW mutate state (write tickets)
