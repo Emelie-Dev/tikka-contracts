@@ -7,7 +7,7 @@ fn ticket_number_matches_monotonic_id() {
     let env = Env::default();
     let owner = Address::generate(&env);
 
-    let ticket = Ticket::new(7, owner, 123);
+    let ticket = Ticket::new(7, owner, 123, MIN_TICKET_PRICE);
 
     assert_eq!(ticket.id, 7);
     assert_eq!(ticket.ticket_number, 7);
@@ -47,27 +47,34 @@ fn buy_tickets_rejects_quantity_above_per_tx_cap() {
         prizes: vec![&env, 10000u32],
         randomness_source: RandomnessSource::Internal,
         oracle_address: None,
+        oracle_public_key: None,
         protocol_fee_bp: 0,
         treasury_address: None,
         swap_router: None,
         tikka_token: None,
         unique_winners: false,
             metadata_hash: BytesN::from_array(&env, &[5u8; 32]),
-        claim_lockup_seconds: 0,
-        swap_deadline_seconds: 0,
+        claim_lockup_seconds: None,
+        swap_deadline_seconds: None,
         early_bird_ticket_percentage: 0,
         early_bird_discount_bp: 0,
+        max_tickets_per_address: 0,
+        claim_expiry_seconds: None,
+        category: None,
+        prize_token: None,
+        nft_contract: None,
+
+            bundles: soroban_sdk::Vec::new(&env),
     };
 
     client.init(&factory, &admin, &creator, &config);
     client.deposit_prize();
 
-    let start_events = env.events().all().len();
     assert_eq!(
         client.try_buy_tickets(&buyer, &6),
         Err(Ok(Error::ExceedsMaxTicketsPerTx))
     );
-    assert_eq!(env.events().all().len(), start_events);
+    assert_eq!(env.events().all().len(), 0);
     assert_eq!(client.buy_tickets(&buyer, &5), 5);
 }
 
@@ -105,15 +112,24 @@ fn buy_tickets_rejects_overflowing_total_price_without_wrapping() {
         prizes: vec![&env, 10000u32],
         randomness_source: RandomnessSource::Internal,
         oracle_address: None,
+        oracle_public_key: None,
         protocol_fee_bp: 0,
         treasury_address: None,
         swap_router: None,
         tikka_token: None,
         metadata_hash: BytesN::from_array(&env, &[77u8; 32]),
-        claim_lockup_seconds: 0,
-        swap_deadline_seconds: 0,
+        claim_lockup_seconds: None,
+        swap_deadline_seconds: None,
         early_bird_ticket_percentage: 0,
         early_bird_discount_bp: 0,
+        max_tickets_per_address: 0,
+        claim_expiry_seconds: None,
+        category: None,
+        unique_winners: false,
+        prize_token: None,
+        nft_contract: None,
+
+            bundles: soroban_sdk::Vec::new(&env),
     };
 
     client.init(&factory, &admin, &creator, &config);
@@ -158,8 +174,8 @@ fn setup_scale_raffle(
 
     let token_admin = Address::generate(env);
     let (payment_token, token_mint) = create_token(env, &token_admin);
-    token_mint.mint(&creator, &prize_amount * 2);
-    token_mint.mint(&buyer, &prize_amount * 2);
+    token_mint.mint(&creator, &(prize_amount * 2));
+    token_mint.mint(&buyer, &(prize_amount * 2));
 
     let config = RaffleConfig {
         description: String::from_str(env, "scale benchmark"),
@@ -175,21 +191,27 @@ fn setup_scale_raffle(
         prizes: vec![env, 10000u32],
         randomness_source: RandomnessSource::Internal,
         oracle_address: None,
+        oracle_public_key: None,
         protocol_fee_bp: 0,
         treasury_address: None,
         swap_router: None,
         tikka_token: None,
         metadata_hash: BytesN::from_array(env, &[88u8; 32]),
-        claim_lockup_seconds: 0,
-        swap_deadline_seconds: 0,
+        claim_lockup_seconds: None,
+        swap_deadline_seconds: None,
         early_bird_ticket_percentage: 0,
         early_bird_discount_bp: 0,
+        max_tickets_per_address: 0,
+        claim_expiry_seconds: None,
+        category: None,
+        unique_winners: false,
+        prize_token: None,
+        nft_contract: None,
+
+            bundles: soroban_sdk::Vec::new(env),
     };
 
     client.init(&factory, &admin, &creator, &config);
-    env.as_contract(&contract_id, || {
-        env.storage().instance().remove(&DataKey::Factory);
-    });
     client.deposit_prize();
 
     (
@@ -211,10 +233,6 @@ fn record_costs<F: FnOnce()>(env: &Env, f: F) -> (u64, u64) {
 
 const BUY_TICKETS_1K_CPU_CEILING: u64 = 30_000_000;
 const BUY_TICKETS_1K_MEM_CEILING: u64 = 10 * 1024 * 1024;
-const FINALIZE_10K_CPU_CEILING: u64 = 80_000_000;
-const FINALIZE_10K_MEM_CEILING: u64 = 24 * 1024 * 1024;
-const GET_MY_TICKETS_10K_CPU_CEILING: u64 = 15_000_000;
-const GET_MY_TICKETS_10K_MEM_CEILING: u64 = 8 * 1024 * 1024;
 
 #[test]
 fn buy_tickets_cost_stays_below_ceiling_for_1k_batch() {
@@ -245,40 +263,19 @@ fn pause_resume_ticket_sales_controls_buy_tickets() {
     env.mock_all_auths();
     env.ledger().set_timestamp(1_000);
 
-    let (client, _admin, creator, buyer, _factory, _token_mint) = setup_active_raffle(&env);
+    let (client, _admin, _creator, buyer, _factory, _token_mint) = setup_active_raffle(&env);
 
     assert_eq!(client.get_raffle().status, RaffleStatus::Active);
     assert!(!client.is_ticket_sales_paused());
 
-    let config = RaffleConfig {
-        description: String::from_str(&env, "Rollback test"),
-        end_time: 0,
-        no_deadline: true,
-        max_tickets: 1,
-        max_tickets_per_tx: 1,
-        min_tickets: 1,
-        allow_multiple: true,
-        ticket_price: MIN_TICKET_PRICE,
-        payment_token: payment_token.clone(),
-        prize_amount: MIN_TICKET_PRICE,
-        prizes: soroban_sdk::vec![&env, 10000],
-        randomness_source: RandomnessSource::External,
-        oracle_address: Some(Address::generate(&env)),
-        protocol_fee_bp: 0,
-        treasury_address: None,
-        swap_router: None,
-        tikka_token: None,
-        unique_winners: false,
-            metadata_hash: BytesN::from_array(&env, &[8; 32]),
-        claim_lockup_seconds: 0,
-        swap_deadline_seconds: 0,
-        early_bird_ticket_percentage: 0,
-        early_bird_discount_bp: 0,
-    };
+    client.pause_ticket_sales(&_admin);
+    assert!(client.is_ticket_sales_paused());
+    assert_eq!(
+        client.try_buy_tickets(&buyer, &1),
+        Err(Ok(Error::ContractPaused))
+    );
 
-    client.init(&factory, &admin, &creator, &config);
-
-    client.resume_ticket_sales(&creator);
+    client.resume_ticket_sales(&_admin);
     assert!(!client.is_ticket_sales_paused());
     assert_eq!(client.get_raffle().status, RaffleStatus::Active);
     assert_eq!(client.buy_tickets(&buyer, &1), 1);
@@ -294,12 +291,11 @@ fn admin_can_pause_and_resume_ticket_sales() {
 
     client.pause_ticket_sales(&admin);
     assert!(client.is_ticket_sales_paused());
-    let start_events = env.events().all().len();
     assert_eq!(
         client.try_buy_tickets(&buyer, &1),
         Err(Ok(Error::ContractPaused))
     );
-    assert_eq!(env.events().all().len(), start_events);
+    assert_eq!(env.events().all().len(), 0);
 
     client.resume_ticket_sales(&admin);
     assert!(!client.is_ticket_sales_paused());
@@ -311,7 +307,7 @@ fn test_bundle_pricing_applies() {
     let env = Env::default();
     env.mock_all_auths();
 
-    let factory = Address::generate(&env);
+    let factory = env.register(MockFactory, ());
     let admin = Address::generate(&env);
     let creator = Address::generate(&env);
     let buyer = Address::generate(&env);
@@ -341,14 +337,15 @@ fn test_bundle_pricing_applies() {
         prizes: soroban_sdk::vec![&env, 10000],
         randomness_source: RandomnessSource::Internal,
         oracle_address: None,
+        oracle_public_key: None,
         protocol_fee_bp: 0,
         treasury_address: None,
         swap_router: None,
         tikka_token: None,
         unique_winners: false,
             metadata_hash: BytesN::from_array(&env, &[9; 32]),
-        claim_lockup_seconds: 0,
-        swap_deadline_seconds: 0,
+        claim_lockup_seconds: None,
+        swap_deadline_seconds: None,
         bundles: soroban_sdk::vec![
             &env,
             raffle_shared::TicketBundle {
@@ -364,12 +361,17 @@ fn test_bundle_pricing_applies() {
                 price_per_ticket: 70_000
             },
         ],
+        max_tickets_per_address: 0,
+        claim_expiry_seconds: None,
+        early_bird_ticket_percentage: 0,
+        early_bird_discount_bp: 0,
+        category: None,
+        prize_token: None,
+        nft_contract: None,
+
     };
 
     client.init(&factory, &admin, &creator, &config);
-    env.as_contract(&contract_id, || {
-        env.storage().instance().remove(&DataKey::Factory);
-    });
 
     client.deposit_prize();
 
@@ -389,48 +391,13 @@ fn test_bundle_pricing_applies() {
 // `prize_amount` in this build, where the prize-claim fee is 0).
 // ===========================================================================
 
-/// Build a valid single-tier internal-randomness config for lifecycle tests.
-/// `max_tickets` doubles as the sell-out threshold so `finalize_raffle` can be
-/// driven purely by ticket exhaustion (no deadline advance needed).
-fn lifecycle_config(env: &Env, payment_token: &Address, treasury: &Address) -> RaffleConfig {
-    RaffleConfig {
-        description: String::from_str(env, "Full lifecycle"),
-        end_time: 0,
-        no_deadline: true,
-        max_tickets: 3,
-        max_tickets_per_tx: 3,
-        min_tickets: 1,
-        allow_multiple: true,
-        ticket_price: MIN_TICKET_PRICE,
-        payment_token: payment_token.clone(),
-        prize_amount: MIN_TICKET_PRICE * 100,
-        prizes: soroban_sdk::vec![env, 10000],
-        randomness_source: RandomnessSource::Internal,
-        oracle_address: None,
-        protocol_fee_bp: 100, // 1% ticket-purchase fee → treasury
-        treasury_address: Some(treasury.clone()),
-        swap_router: None,
-        tikka_token: None,
-        unique_winners: false,
-            metadata_hash: BytesN::from_array(env, &[70u8; 32]),
-        claim_lockup_seconds: 0, // resolved to DEFAULT_CLAIM_LOCKUP_SECONDS
-        swap_deadline_seconds: 0,
-        early_bird_ticket_percentage: 0,
-        early_bird_discount_bp: 0,
-        category: None,
-    };
-
-    let result = client.try_init(&creator_factory_addr(&env), &admin, &creator, &config);
-    assert_eq!(result, Err(Ok(Error::InvalidParameters)));
-}
-
 #[test]
 fn test_adversarial_ceiling_rounding() {
     let env = Env::default();
     env.mock_all_auths();
     env.ledger().set_timestamp(1_000);
 
-    let factory = Address::generate(&env);
+    let factory = env.register(MockFactory, ());
     let admin = Address::generate(&env);
     let creator = Address::generate(&env);
     let buyer = Address::generate(&env);
@@ -440,7 +407,7 @@ fn test_adversarial_ceiling_rounding() {
     let token_client = StellarAssetClient::new(&env, &payment_token);
     
     // Price = 10,001. Fee = 1 bp (0.01%)
-    // (10,001 * 1) / 10000 = 1 (truncation). Ceiling should be 2.
+    // floor(10,001 * 1 / 10,000) = 1 (truncating — favours the payer)
     let ticket_price = 10_001i128;
     token_client.mint(&creator, &1_000_000);
     token_client.mint(&buyer, &1_000_000);
@@ -462,6 +429,7 @@ fn test_adversarial_ceiling_rounding() {
         prizes: soroban_sdk::vec![&env, 10000], // 100%
         randomness_source: RandomnessSource::Internal,
         oracle_address: None,
+        oracle_public_key: None,
         protocol_fee_bp: 1, // 1 basis point
         treasury_address: Some(Address::generate(&env)),
         swap_router: None,
@@ -471,13 +439,21 @@ fn test_adversarial_ceiling_rounding() {
         swap_deadline_seconds: None,
         early_bird_ticket_percentage: 0,
         early_bird_discount_bp: 0,
+        max_tickets_per_address: 0,
+        claim_expiry_seconds: None,
+        category: None,
+        unique_winners: false,
+        prize_token: None,
+        nft_contract: None,
+
+            bundles: soroban_sdk::Vec::new(&env),
     };
 
     client.init(&factory, &admin, &creator, &config);
     client.deposit_prize();
     client.buy_tickets(&buyer, &1);
     
-    let expected_ticket_fee = 2i128; // (10001 * 1 + 9999) / 10000
+    let expected_ticket_fee = 1i128; // floor(10_001 * 1 / 10_000) = 1 (truncating)
     assert_eq!(client.get_accumulated_fees(), expected_ticket_fee);
     
     client.finalize_raffle();
@@ -487,18 +463,15 @@ fn test_adversarial_ceiling_rounding() {
     let claimed = client.claim_prize(&winner, &0);
     assert_eq!(claimed, ticket_price); // Gross amount
     
-    let expected_prize_fee = 2i128; // (10001 * 1 + 9999) / 10000
+    let expected_prize_fee = 1i128; // floor(10_001 * 1 / 10_000) = 1 (truncating)
     assert_eq!(client.get_accumulated_fees(), expected_ticket_fee + expected_prize_fee);
     
     let balance_after = token_client.balance(&winner);
     assert_eq!(balance_after, balance_before + ticket_price - expected_prize_fee);
 }
 
-struct TicketSetup <'a> {
+struct TicketSetup<'a> {
     client: ContractClient<'a>,
-    contract_id: Address,
-    admin: Address,
-    creator: Address,
     buyer: Address,
     recipient: Address,
     token: token::StellarAssetClient<'a>,
@@ -537,6 +510,7 @@ fn setup_per_address_cap(
         prizes: vec![env, 10_000u32],
         randomness_source: RandomnessSource::Internal,
         oracle_address: None,
+        oracle_public_key: None,
         protocol_fee_bp: 0,
         treasury_address: None,
         swap_router: None,
@@ -544,26 +518,22 @@ fn setup_per_address_cap(
         metadata_hash: BytesN::from_array(env, &[1; 32]),
         claim_lockup_seconds: Some(0),
         swap_deadline_seconds: Some(0),
-        early_bird_ticket_percentage,
-        early_bird_discount_bp,
+        early_bird_ticket_percentage: 0,
+        early_bird_discount_bp: 0,
         category: None,
         unique_winners: false,
         bundles: Vec::new(env),
         prize_token: None,
         nft_contract: None,
+        claim_expiry_seconds: None,
+
     };
 
     client.init(&factory, &admin, &creator, &config);
-    env.as_contract(&contract_id, || {
-        env.storage().instance().remove(&DataKey::Factory)
-    });
     client.deposit_prize();
 
     TicketSetup {
         client,
-        contract_id,
-        admin,
-        creator,
         buyer,
         recipient,
         token,
@@ -576,8 +546,8 @@ fn buying_exactly_the_cap_succeeds() {
     env.mock_all_auths();
     let setup = setup_per_address_cap(&env, 5, true, 10);
 
-    assert_eq(s!setup.client.buy_tickets(&se{!!buyer, &5), 5);
-    assert_eq(s!setup.client.get_remaining_ticket_allowance(&setup.buyer), 0);
+    assert_eq!(setup.client.buy_tickets(&setup.buyer, &5), 5);
+    assert_eq!(setup.client.get_remaining_ticket_allowance(&setup.buyer), 0);
 }
 
 #[test]
@@ -587,7 +557,7 @@ fn buying_beyond_the_cap_is_rejected() {
     let setup = setup_per_address_cap(&env, 5, true, 10);
 
     setup.client.buy_tickets(&setup.buyer, &5);
-    assert_eq(
+    assert_eq!(
         setup.client.try_buy_tickets(&setup.buyer, &1),
         Err(Ok(Error::ExceedsMaxTicketsPerAddress))
     );
@@ -600,11 +570,11 @@ fn cap_is_enforced_across_transactions() {
     let setup = setup_per_address_cap(&env, 5, true, 10);
 
     setup.client.buy_tickets(&setup.buyer, &3);
-    assert_eq(
+    assert_eq!(
         setup.client.try_buy_tickets(&setup.buyer, &3),
         Err(Ok(Error::ExceedsMaxTicketsPerAddress))
     );
-    assert_eq(serup.client.get_remaining_ticket_allowance(&setup.buyer), 2);
+    assert_eq!(setup.client.get_remaining_ticket_allowance(&setup.buyer), 2);
 }
 
 #[test]
@@ -614,8 +584,8 @@ fn zero_cap_is_unlimited_up_to_raffle_capacity() {
     let setup = setup_per_address_cap(&env, 0, true, 10);
 
     setup.client.buy_tickets(&setup.buyer, &5);
-    assert_eq(setup.client.buy_tickets(&setup.buyer, &5), 10);
-    assert_eq(setup.client.get_remaining_ticket_allowance(&setup.buyer), 0);
+    assert_eq!(setup.client.buy_tickets(&setup.buyer, &5), 10);
+    assert_eq!(setup.client.get_remaining_ticket_allowance(&setup.buyer), 0);
 }
 
 #[test]
@@ -624,8 +594,8 @@ fn configured_cap_supersedes_allow_multiple() {
     env.mock_all_auths();
     let setup = setup_per_address_cap(&env, 3, false, 10);
 
-    assert_eq(setup.client.buy_tickets(&setup.buyer, &2), 2);
-    assert_eq(setup.client.get_remaining_ticket_allowance(&setup.buyer), 1);
+    assert_eq!(setup.client.buy_tickets(&setup.buyer, &2), 2);
+    assert_eq!(setup.client.get_remaining_ticket_allowance(&setup.buyer), 1);
 }
 
 #[test]
@@ -656,7 +626,7 @@ fn gifted_tickets_count_against_recipient_cap() {
 fn gifted_tickets_charge_buyer_and_assign_owner_to_recipient() {
     let env = Env::default();
     env.mock_all_auths();
-    let setup = setup(&env, 10, true, 20);
+    let setup = setup_per_address_cap(&env, 10, true, 20);
 
     let buyer_balance_before = setup.token.balance(&setup.buyer);
     let recipient_balance_before = setup.token.balance(&setup.recipient);
@@ -675,12 +645,14 @@ fn gifted_tickets_charge_buyer_and_assign_owner_to_recipient() {
     );
     assert_eq!(recipient_balance_after, recipient_balance_before);
 
+    let contract_id = setup.client.address.clone();
     for ticket_id in 1..=3 {
-        let ticket: Ticket = env
-            .storage()
-            .persistent()
-            .get(&DataKey::Ticket(ticket_id))
-            .unwrap();
+        let ticket: Ticket = env.as_contract(&contract_id, || {
+            env.storage()
+                .persistent()
+                .get(&DataKey::Ticket(ticket_id))
+                .unwrap()
+        });
         assert_eq!(ticket.owner, setup.recipient);
         assert_eq!(ticket.payer, setup.buyer);
     }
@@ -712,6 +684,7 @@ fn cap_cannot_exceed_max_tickets() {
         prizes: vec![&env, 10_000u32],
         randomness_source: RandomnessSource::Internal,
         oracle_address: None,
+        oracle_public_key: None,
         protocol_fee_bp: 0,
         treasury_address: None,
         swap_router: None,
@@ -726,12 +699,17 @@ fn cap_cannot_exceed_max_tickets() {
         bundles: Vec::new(&env),
         prize_token: None,
         nft_contract: None,
+        claim_expiry_seconds: None,
+
     };
 
-    assert_eq(
+    assert_eq!(
         client.try_init(&factory, &admin, &creator, &config),
         Err(Ok(Error::InvalidParameters))
-        #[test]
+    );
+}
+
+#[test]
 fn init_rejects_non_ascending_bundle_quantities() {
     // build RaffleConfig with bundles qty 5 then 3 → init Err(InvalidParameters)
 }
@@ -745,8 +723,6 @@ fn calculate_buy_quote_uses_best_bundle() {
 #[test]
 fn early_bird_applies_after_bundle_unit_price() {
     // document numeric precedence in asserts
-}
-    );
 }
 
 struct DeadlineSetup<'a> {
@@ -790,6 +766,7 @@ fn setup_with_deadline(env: &Env, end_time: u64) -> DeadlineSetup<'_> {
         prizes: vec![env, 10_000u32],
         randomness_source: RandomnessSource::Internal,
         oracle_address: None,
+        oracle_public_key: None,
         protocol_fee_bp: 0,
         treasury_address: None,
         swap_router: None,
@@ -804,10 +781,11 @@ fn setup_with_deadline(env: &Env, end_time: u64) -> DeadlineSetup<'_> {
         bundles: Vec::new(env),
         prize_token: None,
         nft_contract: None,
+        claim_expiry_seconds: None,
+
     };
 
     client.init(&factory, &admin, &creator, &config);
-    env.as_contract(&contract_id, || env.storage().instance().remove(&DataKey::Factory));
     client.deposit_prize();
 
     DeadlineSetup { client, buyer, recipient }

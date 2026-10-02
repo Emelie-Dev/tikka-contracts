@@ -4,7 +4,7 @@ use raffle_shared::CancelReason;
 use raffle_shared::constants::TIMELOCK_DELAY_SECONDS;
 
 use crate::events::{
-    CancelScheduled, ContractPaused, ContractUnpaused, EmergencyWithdrawn, FeesWithdrawn,
+    CancelScheduled, ContractPaused, ContractUnpaused, DustSwept, EmergencyWithdrawn, FeesWithdrawn,
     MetadataHashUpdated, OracleAddressUpdated, ProtocolFeeUpdated, RaffleCancelled, StorageWiped,
     SwapDeadlineUpdated, TicketSalesPaused, TicketSalesResumed, TokensRescued,
 };
@@ -26,7 +26,7 @@ fn outstanding_ticket_refunds(env: &Env, raffle: &crate::Raffle) -> Result<i128,
     Ok(outstanding)
 }
 
-fn outstanding_prize(env: &Env, raffle: &crate::Raffle) -> Result<i128, Error> {
+fn outstanding_prize(_env: &Env, raffle: &crate::Raffle) -> Result<i128, Error> {
     if !raffle.prize_deposited {
         return Ok(0);
     }
@@ -76,6 +76,7 @@ fn token_entitlement(env: &Env, raffle: &crate::Raffle, token: &Address) -> Resu
     Ok(entitlement)
 }
 
+#[allow(dead_code)]
 pub(crate) fn set_admin(env: Env, new_admin: Address) -> Result<(), Error> {
     let _old = require_admin(&env)?;
     if !new_admin.exists() || new_admin == env.current_contract_address() {
@@ -88,7 +89,7 @@ pub(crate) fn set_admin(env: Env, new_admin: Address) -> Result<(), Error> {
     Ok(())
 }
 
-pub(crate) fn update_oracle_address(env: Env, new_oracle: Address) -> Result<(), Error> {
+pub(crate) fn update_oracle_address(env: Env, new_oracle: Address, new_public_key: Option<BytesN<32>>) -> Result<(), Error> {
     let admin = require_admin(&env)?;
     let mut raffle = read_raffle(&env)?;
     if raffle.randomness_source != raffle_shared::RandomnessSource::External {
@@ -105,6 +106,11 @@ pub(crate) fn update_oracle_address(env: Env, new_oracle: Address) -> Result<(),
     }
     let old = raffle.oracle_address.clone();
     raffle.oracle_address = Some(new_oracle.clone());
+    // FIX(#985): rotate the registered public key atomically with the address.
+    // Failing to do so would leave the old key in place while a new oracle is
+    // registered, allowing the old oracle key to continue passing the binding
+    // check in provide_randomness.
+    raffle.oracle_public_key = new_public_key;
     write_raffle(&env, &raffle);
     OracleAddressUpdated {
         old_oracle: old,
@@ -261,16 +267,16 @@ pub(crate) fn execute_admin_cancel(env: Env) -> Result<(), Error> {
 
 pub(crate) fn update_metadata_hash(env: Env, new_hash: BytesN<32>) -> Result<(), Error> {
     let admin = require_admin(&env)?;
-    let old_hash = env
-        .storage()
-        .instance()
-        .get::<_, BytesN<32>>(&DataKey::MetadataHash)
-        .ok_or(Error::NotInitialized)?;
-    
-    env.storage()
-        .instance()
-        .set(&DataKey::MetadataHash, &new_hash);
-    
+    let mut raffle = crate::read_raffle(&env)?;
+    // The metadata hash is frozen once the prize is in escrow so downstream
+    // verifiers cannot be shown a different payload after deposits begin.
+    if raffle.prize_deposited {
+        return Err(Error::InvalidStatus);
+    }
+    let old_hash = raffle.metadata_hash.clone();
+    raffle.metadata_hash = new_hash.clone();
+    crate::write_raffle(&env, &raffle);
+
     MetadataHashUpdated {
         old_hash,
         new_hash,
@@ -278,7 +284,7 @@ pub(crate) fn update_metadata_hash(env: Env, new_hash: BytesN<32>) -> Result<(),
         timestamp: env.ledger().timestamp(),
     }
     .publish(&env);
-    
+
     Ok(())
 }
 

@@ -1,8 +1,5 @@
 use proptest::prelude::*;
-use crate::{
-    assert_solvent, calculate_tier_prize, DataKey, Raffle, RaffleStatus, Ticket, MAX_PRIZE_AMOUNT,
-    MIN_TICKET_PRICE,
-};
+use crate::{calculate_tier_prize, Raffle, RaffleStatus, MAX_PRIZE_AMOUNT, MIN_TICKET_PRICE};
 use soroban_sdk::{testutils::Address as _, Address, BytesN, Env, String, Vec};
 
 fn valid_prize_weights() -> impl Strategy<Value = std::vec::Vec<u32>> {
@@ -42,9 +39,10 @@ fn test_raffle(env: &Env, weights: &[u32], prize_amount: i128) -> Raffle {
         status: RaffleStatus::PendingPrize,
         prize_deposited: false,
         winners: Vec::new(env),
-        claimed_winners: Vec::new(env),
+        bundles: Vec::new(env),
         randomness_source: raffle_shared::RandomnessSource::Internal,
         oracle_address: None,
+        oracle_public_key: None,
         protocol_fee_bp: 0,
         treasury_address: None,
         swap_router: None,
@@ -59,6 +57,7 @@ fn test_raffle(env: &Env, weights: &[u32], prize_amount: i128) -> Raffle {
         metadata_hash: BytesN::from_array(env, &[1; 32]),
         unique_winners: false,
         nft_contract: None,
+        bundles: Vec::new(env),
     }
 }
 
@@ -248,9 +247,10 @@ proptest! {
 /// still owes to ticket holders (`per_ticket_refund` for each not-yet-refunded
 /// ticket id) plus any un-refunded prize escrowed on behalf of the creator.
 ///
-/// Called by the refund-path lifecycle tests (`tests/claim.rs`) after every
+/// Called by the refund-path lifecycle tests (`claim.rs`) after every
 /// refund/prize-recovery operation, and asserted inline by the fuzz harness
 /// (`fuzz/fuzz_targets/real_harness.rs::refund_cancel`).
+#[allow(dead_code)]
 pub fn assert_refund_solvency(
     env: &Env,
     contract_id: &Address,
@@ -278,4 +278,403 @@ pub fn assert_refund_solvency(
         payment_balance,
         prize_balance,
     );
+}
+
+use raffle_shared::CancelReason;
+
+/// Table-driven definition for entrypoint status rejection assertions (#1079).
+#[derive(Clone, Copy)]
+pub struct EntrypointStatusExpectation {
+    pub entrypoint: &'static str,
+    pub permitted: &'static [RaffleStatus],
+    pub rejected: &'static [RaffleStatus],
+}
+
+pub const ENTRYPOINT_STATUS_TABLE: &[EntrypointStatusExpectation] = &[
+    EntrypointStatusExpectation {
+        entrypoint: "deposit_prize",
+        permitted: &[RaffleStatus::PendingPrize],
+        rejected: &[
+            RaffleStatus::Active,
+            RaffleStatus::Drawing,
+            RaffleStatus::Finalized,
+            RaffleStatus::Cancelled,
+            RaffleStatus::Failed,
+            RaffleStatus::Claimed,
+        ],
+    },
+    EntrypointStatusExpectation {
+        entrypoint: "buy_tickets",
+        permitted: &[RaffleStatus::Active],
+        rejected: &[
+            RaffleStatus::PendingPrize,
+            RaffleStatus::Drawing,
+            RaffleStatus::Finalized,
+            RaffleStatus::Cancelled,
+            RaffleStatus::Failed,
+            RaffleStatus::Claimed,
+        ],
+    },
+    EntrypointStatusExpectation {
+        entrypoint: "buy_tickets_for",
+        permitted: &[RaffleStatus::Active],
+        rejected: &[
+            RaffleStatus::PendingPrize,
+            RaffleStatus::Drawing,
+            RaffleStatus::Finalized,
+            RaffleStatus::Cancelled,
+            RaffleStatus::Failed,
+            RaffleStatus::Claimed,
+        ],
+    },
+    EntrypointStatusExpectation {
+        entrypoint: "submit_commit",
+        permitted: &[RaffleStatus::Active],
+        rejected: &[
+            RaffleStatus::PendingPrize,
+            RaffleStatus::Drawing,
+            RaffleStatus::Finalized,
+            RaffleStatus::Cancelled,
+            RaffleStatus::Failed,
+            RaffleStatus::Claimed,
+        ],
+    },
+    EntrypointStatusExpectation {
+        entrypoint: "finalize_raffle",
+        permitted: &[RaffleStatus::Active, RaffleStatus::Drawing],
+        rejected: &[
+            RaffleStatus::PendingPrize,
+            RaffleStatus::Finalized,
+            RaffleStatus::Cancelled,
+            RaffleStatus::Failed,
+            RaffleStatus::Claimed,
+        ],
+    },
+    EntrypointStatusExpectation {
+        entrypoint: "claim_prize",
+        permitted: &[RaffleStatus::Finalized],
+        rejected: &[
+            RaffleStatus::PendingPrize,
+            RaffleStatus::Active,
+            RaffleStatus::Drawing,
+            RaffleStatus::Cancelled,
+            RaffleStatus::Failed,
+            RaffleStatus::Claimed,
+        ],
+    },
+    EntrypointStatusExpectation {
+        entrypoint: "sweep_unclaimed",
+        permitted: &[RaffleStatus::Finalized],
+        rejected: &[
+            RaffleStatus::PendingPrize,
+            RaffleStatus::Active,
+            RaffleStatus::Drawing,
+            RaffleStatus::Cancelled,
+            RaffleStatus::Failed,
+            RaffleStatus::Claimed,
+        ],
+    },
+    EntrypointStatusExpectation {
+        entrypoint: "refund_prize",
+        permitted: &[RaffleStatus::Cancelled, RaffleStatus::Failed],
+        rejected: &[
+            RaffleStatus::PendingPrize,
+            RaffleStatus::Active,
+            RaffleStatus::Drawing,
+            RaffleStatus::Finalized,
+            RaffleStatus::Claimed,
+        ],
+    },
+    EntrypointStatusExpectation {
+        entrypoint: "refund_ticket",
+        permitted: &[RaffleStatus::Cancelled, RaffleStatus::Failed],
+        rejected: &[
+            RaffleStatus::PendingPrize,
+            RaffleStatus::Active,
+            RaffleStatus::Drawing,
+            RaffleStatus::Finalized,
+            RaffleStatus::Claimed,
+        ],
+    },
+    EntrypointStatusExpectation {
+        entrypoint: "batch_refund_tickets",
+        permitted: &[RaffleStatus::Cancelled, RaffleStatus::Failed],
+        rejected: &[
+            RaffleStatus::PendingPrize,
+            RaffleStatus::Active,
+            RaffleStatus::Drawing,
+            RaffleStatus::Finalized,
+            RaffleStatus::Claimed,
+        ],
+    },
+    EntrypointStatusExpectation {
+        entrypoint: "emergency_withdraw",
+        permitted: &[RaffleStatus::Drawing],
+        rejected: &[
+            RaffleStatus::PendingPrize,
+            RaffleStatus::Active,
+            RaffleStatus::Finalized,
+            RaffleStatus::Cancelled,
+            RaffleStatus::Failed,
+            RaffleStatus::Claimed,
+        ],
+    },
+    EntrypointStatusExpectation {
+        entrypoint: "pause_ticket_sales",
+        permitted: &[RaffleStatus::Active],
+        rejected: &[
+            RaffleStatus::PendingPrize,
+            RaffleStatus::Drawing,
+            RaffleStatus::Finalized,
+            RaffleStatus::Cancelled,
+            RaffleStatus::Failed,
+            RaffleStatus::Claimed,
+        ],
+    },
+    EntrypointStatusExpectation {
+        entrypoint: "resume_ticket_sales",
+        permitted: &[RaffleStatus::Active],
+        rejected: &[
+            RaffleStatus::PendingPrize,
+            RaffleStatus::Drawing,
+            RaffleStatus::Finalized,
+            RaffleStatus::Cancelled,
+            RaffleStatus::Failed,
+            RaffleStatus::Claimed,
+        ],
+    },
+    EntrypointStatusExpectation {
+        entrypoint: "withdraw_fees",
+        permitted: &[RaffleStatus::Finalized, RaffleStatus::Claimed],
+        rejected: &[
+            RaffleStatus::PendingPrize,
+            RaffleStatus::Active,
+            RaffleStatus::Drawing,
+            RaffleStatus::Cancelled,
+            RaffleStatus::Failed,
+        ],
+    },
+    EntrypointStatusExpectation {
+        entrypoint: "sweep_dust",
+        permitted: &[RaffleStatus::Cancelled, RaffleStatus::Claimed],
+        rejected: &[
+            RaffleStatus::PendingPrize,
+            RaffleStatus::Active,
+            RaffleStatus::Drawing,
+            RaffleStatus::Finalized,
+            RaffleStatus::Failed,
+        ],
+    },
+    EntrypointStatusExpectation {
+        entrypoint: "wipe_storage",
+        permitted: &[
+            RaffleStatus::Cancelled,
+            RaffleStatus::Failed,
+            RaffleStatus::Claimed,
+        ],
+        rejected: &[
+            RaffleStatus::PendingPrize,
+            RaffleStatus::Active,
+            RaffleStatus::Drawing,
+            RaffleStatus::Finalized,
+        ],
+    },
+    EntrypointStatusExpectation {
+        entrypoint: "cancel_raffle",
+        permitted: &[RaffleStatus::Active, RaffleStatus::Drawing],
+        rejected: &[
+            RaffleStatus::PendingPrize,
+            RaffleStatus::Finalized,
+            RaffleStatus::Cancelled,
+            RaffleStatus::Failed,
+            RaffleStatus::Claimed,
+        ],
+    },
+    EntrypointStatusExpectation {
+        entrypoint: "provide_randomness",
+        permitted: &[RaffleStatus::Drawing],
+        rejected: &[
+            RaffleStatus::PendingPrize,
+            RaffleStatus::Active,
+            RaffleStatus::Finalized,
+            RaffleStatus::Cancelled,
+            RaffleStatus::Failed,
+            RaffleStatus::Claimed,
+        ],
+    },
+    EntrypointStatusExpectation {
+        entrypoint: "trigger_randomness_fallback",
+        permitted: &[RaffleStatus::Drawing],
+        rejected: &[
+            RaffleStatus::PendingPrize,
+            RaffleStatus::Active,
+            RaffleStatus::Finalized,
+            RaffleStatus::Cancelled,
+            RaffleStatus::Failed,
+            RaffleStatus::Claimed,
+        ],
+    },
+];
+
+fn set_contract_status(env: &Env, contract_id: &Address, status: RaffleStatus) {
+    env.as_contract(contract_id, || {
+        let mut raffle: Raffle = env.storage().instance().get(&DataKey::Raffle).unwrap();
+        raffle.status = status;
+        raffle.prize_deposited = status != RaffleStatus::PendingPrize;
+        env.storage().instance().set(&DataKey::Raffle, &raffle);
+    });
+}
+
+fn invoke_entrypoint_for_rejection(
+    client: &crate::RaffleInstanceClient<'_>,
+    env: &Env,
+    admin: &Address,
+    creator: &Address,
+    entrypoint: &str,
+) -> bool {
+    match entrypoint {
+        "deposit_prize" => client.try_deposit_prize().is_err(),
+        "buy_tickets" => client.try_buy_tickets(creator, &1).is_err(),
+        "buy_tickets_for" => client.try_buy_tickets_for(creator, creator, &1).is_err(),
+        "submit_commit" => client
+            .try_submit_commit(&1, &BytesN::from_array(env, &[0u8; 32]))
+            .is_err(),
+        "finalize_raffle" => client.try_finalize_raffle().is_err(),
+        "claim_prize" => client.try_claim_prize(creator, &0).is_err(),
+        "sweep_unclaimed" => client.try_sweep_unclaimed(&0, &1).is_err(),
+        "refund_prize" => client.try_refund_prize().is_err(),
+        "refund_ticket" => client.try_refund_ticket(creator, &1).is_err(),
+        "batch_refund_tickets" => client
+            .try_batch_refund_tickets(creator, &soroban_sdk::Vec::new(env))
+            .is_err(),
+        "emergency_withdraw" => client.try_emergency_withdraw(creator).is_err(),
+        "pause_ticket_sales" => client.try_pause_ticket_sales(creator).is_err(),
+        "resume_ticket_sales" => client.try_resume_ticket_sales(creator).is_err(),
+        "withdraw_fees" => client.try_withdraw_fees(admin, &1).is_err(),
+        "sweep_dust" => client.try_sweep_dust().is_err(),
+        "wipe_storage" => client.try_wipe_storage().is_err(),
+        "cancel_raffle" => client
+            .try_cancel_raffle(&CancelReason::CreatorCancelled)
+            .is_err(),
+        "provide_randomness" => client
+            .try_provide_randomness(
+                &0,
+                &BytesN::from_array(env, &[0u8; 32]),
+                &BytesN::from_array(env, &[0u8; 64]),
+                &0,
+            )
+            .is_err(),
+        "trigger_randomness_fallback" => client
+            .try_trigger_randomness_fallback(creator, &false)
+            .is_err(),
+        other => panic!("unknown entrypoint: {other}"),
+    }
+}
+
+/// Table-driven test ensuring every entrypoint partitions all RaffleStatus variants
+/// into permitted vs rejected sets without omission or overlap.
+#[test]
+fn test_entrypoint_status_matrix_coverage() {
+    let all = RaffleStatus::all();
+
+    for row in ENTRYPOINT_STATUS_TABLE.iter() {
+        assert_eq!(
+            row.permitted.len() + row.rejected.len(),
+            all.len(),
+            "Entrypoint '{}' does not partition all {} RaffleStatus variants",
+            row.entrypoint,
+            all.len(),
+        );
+
+        for &status in all {
+            let is_permitted = row.permitted.contains(&status);
+            let is_rejected = row.rejected.contains(&status);
+            assert!(
+                is_permitted ^ is_rejected,
+                "Entrypoint '{}' must classify status {:?} as either permitted or rejected, but not both",
+                row.entrypoint,
+                status
+            );
+        }
+    }
+}
+
+#[test]
+fn test_entrypoints_reject_every_prohibited_status() {
+    let env = Env::default();
+    env.mock_all_auths();
+    env.ledger().set_timestamp(1_000);
+
+    let contract_id = env.register(crate::RaffleInstance, ());
+    let client = crate::RaffleInstanceClient::new(&env, &contract_id);
+    let factory = Address::generate(&env);
+    let admin = Address::generate(&env);
+    let creator = Address::generate(&env);
+    let payment_token = Address::generate(&env);
+
+    let mut prizes = soroban_sdk::Vec::new(&env);
+    prizes.push_back(10_000);
+
+    let raffle = Raffle {
+        creator: creator.clone(),
+        description: String::from_str(&env, "status test"),
+        end_time: 0,
+        no_deadline: true,
+        max_tickets: 10,
+        max_tickets_per_tx: 10,
+        max_tickets_per_address: 10,
+        min_tickets: 1,
+        allow_multiple: true,
+        ticket_price: MIN_TICKET_PRICE,
+        payment_token: payment_token.clone(),
+        prize_token: payment_token.clone(),
+        prize_amount: 10 * MIN_TICKET_PRICE,
+        prizes,
+        tickets_sold: 0,
+        status: RaffleStatus::PendingPrize,
+        prize_deposited: false,
+        winners: soroban_sdk::Vec::new(&env),
+        randomness_source: raffle_shared::RandomnessSource::Internal,
+        oracle_address: None,
+        protocol_fee_bp: 0,
+        treasury_address: None,
+        swap_router: None,
+        tikka_token: None,
+        finalized_at: None,
+        claim_lockup_seconds: 0,
+        claim_expiry_seconds: 3600,
+        swap_deadline_seconds: 0,
+        ticket_sales_paused: false,
+        early_bird_ticket_percentage: 0,
+        early_bird_discount_bp: 0,
+        metadata_hash: BytesN::from_array(&env, &[1; 32]),
+        unique_winners: false,
+        bundles: soroban_sdk::Vec::new(&env),
+        nft_contract: None,
+    };
+
+    env.as_contract(&contract_id, || {
+        env.storage().instance().set(&DataKey::Raffle, &raffle);
+        env.storage().instance().set(&DataKey::Admin, &admin);
+        env.storage().instance().set(&DataKey::Factory, &factory);
+    });
+
+    for row in ENTRYPOINT_STATUS_TABLE.iter() {
+        for &status in row.rejected {
+            set_contract_status(&env, &contract_id, status);
+            let rejected = invoke_entrypoint_for_rejection(
+                &client,
+                &env,
+                &admin,
+                &creator,
+                row.entrypoint,
+            );
+            assert!(
+                rejected,
+                "Entrypoint '{}' unexpectedly succeeded or did not reject prohibited status {:?}",
+                row.entrypoint,
+                status
+            );
+        }
+    }
 }
