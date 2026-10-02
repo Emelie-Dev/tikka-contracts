@@ -48,6 +48,35 @@ export class DeduplicationStore {
     }
   }
 
+  /**
+   * Pure predicate — returns true if the request has already been processed.
+   * Does NOT mutate state.
+   */
+  has(requestId: bigint, raffleAddress: string): boolean {
+    const key = `${raffleAddress}:${requestId.toString()}`;
+    return this.seen.has(key);
+  }
+
+  /**
+   * Marks a request as successfully processed and persists to disk.
+   * Call this only after a successful on-chain submission so that a
+   * mid-flight failure does not permanently suppress retries.
+   */
+  markProcessed(requestId: bigint, raffleAddress: string): void {
+    const key = `${raffleAddress}:${requestId.toString()}`;
+    if (!this.seen.has(key)) {
+      this.seen.add(key);
+      this.saveToDisk();
+    }
+  }
+
+  /**
+   * @deprecated Use `has` + `markProcessed` instead.
+   * Kept for backwards-compatibility only; will be removed in a future release.
+   *
+   * Returns true if the request was already seen AND adds it to the seen set
+   * on first call — a combined read/write that prevents safe retries on failure.
+   */
   isDuplicate(requestId: bigint, raffleAddress: string): boolean {
     const key = `${raffleAddress}:${requestId.toString()}`;
     if (this.seen.has(key)) {
@@ -56,20 +85,5 @@ export class DeduplicationStore {
     this.seen.add(key);
     this.saveToDisk();
     return false;
-  }
-
-  // Check if we've already seen this request (does not mutate state)
-  hasSeen(requestId: bigint, raffleAddress: string): boolean {
-    const key = `${raffleAddress}:${requestId.toString()}`;
-    return this.seen.has(key);
-  }
-
-  // Mark a request as seen and persist immediately
-  markSeen(requestId: bigint, raffleAddress: string): void {
-    const key = `${raffleAddress}:${requestId.toString()}`;
-    if (!this.seen.has(key)) {
-      this.seen.add(key);
-      this.saveToDisk();
-    }
   }
 }

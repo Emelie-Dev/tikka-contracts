@@ -82,7 +82,7 @@ fn init_accepts_max_prize_amount_and_rejects_above_it() {
     let client = ContractClient::new(&env, &contract_id);
     let prizes = soroban_sdk::vec![&env, 10000u32];
 
-    let config = init_bounds_config(
+    let mut config = init_bounds_config(
         &env,
         &payment_token,
         String::from_str(&env, "max prize amount"),
@@ -91,6 +91,10 @@ fn init_accepts_max_prize_amount_and_rejects_above_it() {
         MAX_PRIZE_AMOUNT,
         prizes.clone(),
     );
+    // The 1e21 bound is only reachable for non-internal randomness; internal
+    // draws are capped by MAX_INTERNAL_RANDOMNESS_PRIZE_AMOUNT.
+    config.randomness_source = RandomnessSource::External;
+    config.oracle_address = Some(Address::generate(&env));
     client.init(&factory, &admin, &creator, &config);
 
     let invalid = init_bounds_config(

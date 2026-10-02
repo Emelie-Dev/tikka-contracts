@@ -1,3 +1,4 @@
+use raffle_shared::apply_bp;
 use raffle_shared::constants::MAX_SWEEP_UNCLAIMED_PER_CALL;
 use raffle_shared::math::split_bp;
 use soroban_sdk::{token, Address, Env};
@@ -41,6 +42,12 @@ pub(crate) fn claim_prize(env: Env, winner: Address, tier_index: u32) -> Result<
         return Err(Error::ZeroPrize);
     }
 
+    let protocol_fee = apply_bp(amount, raffle.protocol_fee_bp)
+        .ok_or(Error::ArithmeticOverflow)?;
+
+    let net_amount = amount
+        .checked_sub(protocol_fee)
+        .ok_or(Error::ArithmeticOverflow)?;
     let (protocol_fee, net_amount) =
         split_bp(amount, raffle.protocol_fee_bp).map_err(|_| Error::ArithmeticOverflow)?;
     let tc = token::Client::new(&env, &raffle.prize_token);
@@ -78,15 +85,16 @@ pub(crate) fn claim_prize(env: Env, winner: Address, tier_index: u32) -> Result<
     if protocol_fee > 0 {
         if let Some(treasury) = &raffle.treasury_address {
             tc.transfer(&env.current_contract_address(), treasury, &protocol_fee);
+        } else {
+            let prev: i128 = env
+                .storage()
+                .instance()
+                .get(&DataKey::AccumulatedFees)
+                .unwrap_or(0);
+            env.storage()
+                .instance()
+                .set(&DataKey::AccumulatedFees, &(prev + protocol_fee));
         }
-        let prev: i128 = env
-            .storage()
-            .instance()
-            .get(&DataKey::AccumulatedFees)
-            .unwrap_or(0);
-        env.storage()
-            .instance()
-            .set(&DataKey::AccumulatedFees, &(prev + protocol_fee));
     }
 
     PrizeClaimed {
@@ -196,7 +204,7 @@ pub(crate) fn refund_prize(env: Env) -> Result<(), Error> {
     write_raffle(&env, &raffle);
 
     let token_client = token::Client::new(&env, &raffle.prize_token);
-    token_client
+    let _ = token_client
         .try_transfer(
             &env.current_contract_address(),
             &raffle.creator,
@@ -214,7 +222,7 @@ pub(crate) fn refund_prize(env: Env) -> Result<(), Error> {
     Ok(())
 }
 
-pub(crate) fn refund_ticket(env: Env, _caller: Address, ticket_id: u32) -> Result<i128, Error> {
+pub(crate) fn refund_ticket(env: Env, ticket_id: u32) -> Result<i128, Error> {
     let raffle = read_raffle(&env)?;
     if raffle.status != RaffleStatus::Cancelled && raffle.status != RaffleStatus::Failed {
         return Err(Error::InvalidStatus);
@@ -262,19 +270,28 @@ pub(crate) fn batch_refund_tickets(
     env: Env,
     caller: Address,
     ticket_ids: soroban_sdk::Vec<u32>,
-) -> Result<i128, Error> {
+) -> Result<u32, Error> {
     let raffle = read_raffle(&env)?;
-    if raffle.status != RaffleStatus::Cancelled && raffle.status != RaffleStatus::Failed { return Err(Error::InvalidStatus); }
+    if raffle.status != RaffleStatus::Cancelled && raffle.status != RaffleStatus::Failed {
+        return Err(Error::InvalidStatus);
+    }
+    if ticket_ids.len() > MAX_BATCH_REFUND_PER_CALL {
+        return Err(Error::InvalidParameters);
+    }
 
     let _guard = Guard::new(&env)?;
     caller.require_auth();
-    
+
     let token_client = token::Client::new(&env, &raffle.payment_token);
-    let mut total_refunded: i128 = 0;
+    let mut refunded_count: u32 = 0;
 
     for ticket_id in ticket_ids.iter() {
-        let ticket: crate::Ticket = env.storage().persistent().get(&DataKey::Ticket(ticket_id)).ok_or(Error::TicketNotFound)?;
-        
+        let ticket: crate::Ticket = env
+            .storage()
+            .persistent()
+            .get(&DataKey::Ticket(ticket_id))
+            .ok_or(Error::TicketNotFound)?;
+
         if caller != ticket.payer && caller != ticket.owner {
             return Err(Error::NotAuthorized);
         }
@@ -290,5 +307,5 @@ pub(crate) fn batch_refund_tickets(
         }
     }
 
-    Ok(total_refunded)
+    Ok(refunded_count)
 }

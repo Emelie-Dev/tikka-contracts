@@ -127,7 +127,7 @@ export function loadAndValidateConfig(): OracleConfig {
     process.exit(1);
   }
 
-  // At this point errors.length === 0, so rpcUrl and factoryContractId are defined.
+  // At this point errors.length === 0, so rpcUrl, factoryContractId, and oracleSecretKey are defined and valid.
   // The non-null assertions below are replaced by explicit narrowing guards above
   // (process.exit(1) means we never reach here with undefined values).
 

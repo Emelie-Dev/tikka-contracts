@@ -682,17 +682,18 @@ Topic: `tikka:protocol_fee_updated`
 
 ## RaffleCancelled
 
-Emitted when a raffle is cancelled and (if applicable) prizes refunded.
+Emitted when a raffle is cancelled. `prize_refunded` is true only after the
+prize tokens have actually been transferred back to the creator.
 
 Topic: `tikka:raffle_cancelled`
 
-| Field            | Type           | Flags | Description                                              |
-| ---------------- | -------------- | ----- | -------------------------------------------------------- |
-| `creator`        | `Address`      |       | Address that created the raffle.                         |
-| `reason`         | `CancelReason` |       | Machine-readable cancel reason.                          |
-| `tickets_sold`   | `u32`          |       | Number of tickets sold before cancellation.              |
-| `prize_refunded` | `bool`         |       | Whether the deposited prize was returned to the creator. |
-| `timestamp`      | `u64`          |       | Ledger timestamp of the cancellation.                    |
+| Field | Type | Flags | Description |
+|-------|------|-------|-------------|
+| `creator` | `Address` |  | Address that created the raffle. |
+| `reason` | `CancelReason` |  | Machine-readable cancel reason. |
+| `tickets_sold` | `u32` |  | Number of tickets sold before cancellation. |
+| `prize_refunded` | `bool` |  | Whether the deposited prize has left escrow and been returned to the creator. |
+| `timestamp` | `u64` |  | Ledger timestamp of the cancellation. |
 
 **Emitted by:** `cancel_raffle`, `trigger_randomness_fallback`
 
@@ -866,17 +867,17 @@ Emitted when tickets are bought for another address (a gift).
 
 Topic: `tikka:ticket_gifted`
 
-| Field                    | Type       | Flags | Description                                                                             |
-| ------------------------ | ---------- | ----- | --------------------------------------------------------------------------------------- |
-| `buyer`                  | `Address`  |       | Address that paid for the tickets.                                                      |
-| `recipient`              | `Address`  |       | Address that received the tickets (owner of record).                                    |
-| `ticket_ids`             | `Vec<u32>` |       | 1-based ticket IDs minted; length equals `quantity`.                                    |
-| `quantity`               | `u32`      |       | Number of tickets gifted in this transaction.                                           |
-| `ticket_price`           | `i128`     |       | Nominal unit price used for reserved seats.                                             |
-| `effective_ticket_price` | `i128`     |       | Effective unit price actually charged (equals `ticket_price` when no discount applies). |
-| `total_paid`             | `i128`     |       | Total paid by `buyer`.                                                                  |
-| `protocol_fee`           | `i128`     |       | Protocol fee (basis points of `total_paid`).                                            |
-| `timestamp`              | `u64`      |       | Ledger timestamp of the gift.                                                           |
+| Field | Type | Flags | Description |
+|-------|------|-------|-------------|
+| `buyer` | `Address` |  | Address that paid for the tickets. |
+| `recipient` | `Address` |  | Address that received the tickets (owner of record). |
+| `ticket_ids` | `Vec<u32>` |  | 1-based ticket IDs minted; length equals `quantity`. |
+| `quantity` | `u32` |  | Number of tickets gifted in this transaction. |
+| `ticket_price` | `i128` |  | Nominal unit price used for reserved seats. |
+| `effective_ticket_price` | `i128` |  | Effective unit price actually charged (equals `ticket_price` when no discount applies). |
+| `total_paid` | `i128` |  | Total paid by `buyer`. |
+| `protocol_fee` | `i128` |  | Protocol fee (basis points of `total_paid`) held for later withdrawal. |
+| `timestamp` | `u64` |  | Ledger timestamp of the gift. |
 
 **Emitted by:** `buy_tickets_for`
 
@@ -906,16 +907,16 @@ Emitted when a ticket purchase succeeds and tickets are minted.
 
 Topic: `tikka:ticket_purchased`
 
-| Field                    | Type       | Flags | Description                                                                             |
-| ------------------------ | ---------- | ----- | --------------------------------------------------------------------------------------- |
-| `buyer`                  | `Address`  |       | Address whose account(s) paid for the tickets.                                          |
-| `ticket_ids`             | `Vec<u32>` |       | 1-based ticket IDs minted; length equals `quantity`.                                    |
-| `quantity`               | `u32`      |       | Number of tickets purchased in this transaction.                                        |
-| `ticket_price`           | `i128`     |       | Nominal unit price used for reserved seats.                                             |
-| `effective_ticket_price` | `i128`     |       | Effective unit price actually charged (equals `ticket_price` when no discount applies). |
-| `total_paid`             | `i128`     |       | Total paid: `effective_ticket_price * quantity` after any discounts.                    |
-| `protocol_fee`           | `i128`     |       | Protocol fee (basis points of `total_paid`) withheld and forwarded to the treasury.     |
-| `timestamp`              | `u64`      |       | Ledger timestamp of the purchase.                                                       |
+| Field | Type | Flags | Description |
+|-------|------|-------|-------------|
+| `buyer` | `Address` |  | Address whose account(s) paid for the tickets. |
+| `ticket_ids` | `Vec<u32>` |  | 1-based ticket IDs minted; length equals `quantity`. |
+| `quantity` | `u32` |  | Number of tickets purchased in this transaction. |
+| `ticket_price` | `i128` |  | Nominal unit price used for reserved seats. |
+| `effective_ticket_price` | `i128` |  | Effective unit price actually charged (equals `ticket_price` when no discount applies). |
+| `total_paid` | `i128` |  | Total paid: `effective_ticket_price * quantity` after any discounts. |
+| `protocol_fee` | `i128` |  | Protocol fee (basis points of `total_paid`) held for later withdrawal. |
+| `timestamp` | `u64` |  | Ledger timestamp of the purchase. |
 
 **Emitted by:** `buy_tickets`
 

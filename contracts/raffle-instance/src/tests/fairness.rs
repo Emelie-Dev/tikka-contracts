@@ -8,10 +8,14 @@
 //! write is caught.
 
 use raffle_shared::RandomnessSource;
-use soroban_sdk::{token::StellarAssetClient, Address, BytesN, Env, String, Vec};
+use soroban_sdk::{
+    testutils::{Address as _, Ledger},
+    token::StellarAssetClient,
+    Address, BytesN, Env, String, Vec,
+};
 
 use crate::{
-    Contract, ContractClient, FairnessMetadata, DataKey, RaffleConfig, RaffleStatus,
+    Contract, ContractClient, DataKey, FairnessMetadata, MockFactory, RaffleConfig, RaffleStatus,
     MIN_TICKET_PRICE,
 };
 
@@ -19,7 +23,7 @@ fn setup_unique_winners_raffle(env: &Env) -> (ContractClient<'_>, Address, Addre
     let contract_id = env.register(Contract, ());
     let client = ContractClient::new(env, &contract_id);
 
-    let factory = Address::generate(env);
+    let factory = env.register(MockFactory, ());
     let admin = Address::generate(env);
     let creator = Address::generate(env);
     let buyer = Address::generate(env);
@@ -62,12 +66,11 @@ fn setup_unique_winners_raffle(env: &Env) -> (ContractClient<'_>, Address, Addre
         bundles: Vec::new(env),
         prize_token: None,
         nft_contract: None,
+        claim_expiry_seconds: None,
+
     };
 
     client.init(&factory, &admin, &creator, &config);
-    env.as_contract(&contract_id, || {
-        env.storage().instance().remove(&DataKey::Factory);
-    });
     client.deposit_prize();
 
     (client, contract_id, buyer)
